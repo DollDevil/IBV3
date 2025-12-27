@@ -215,84 +215,102 @@ class IslaBot(commands.Bot):
             if len(bot_guild_ids) > 5:
                 print(f"  ... and {len(bot_guild_ids) - 5} more")
             
-            # Sync commands to each guild directly (guild-specific commands)
-            for gid in guild_ids:
-                try:
-                    # Convert to int, handling string IDs
-                    guild_id_int = int(str(gid).strip())
-                    
-                    # Verify bot is actually in this guild
-                    if guild_id_int not in bot_guild_ids:
-                        print(f"⚠ Warning: Bot is not in guild {guild_id_int}")
-                        print(f"  The bot must be invited to the server before commands can sync.")
-                        print(f"  Check that the bot is actually in the server.")
-                        continue
-                    
-                    g = discord.Object(id=guild_id_int)
-                    # Sync directly to guild (don't use copy_global_to - that's for copying global commands)
-                    print(f"Syncing commands to guild {guild_id_int}...")
+            # Try syncing globally first, then copy to guilds
+            # This is more reliable than syncing directly to guilds
+            print(f"\nAttempting global sync first...")
+            try:
+                global_synced = await self.tree.sync()
+                print(f"✓ Global sync: {len(global_synced)} commands synced")
+                if global_synced:
+                    for cmd in global_synced[:5]:
+                        print(f"  - {cmd.name}")
+                    if len(global_synced) > 5:
+                        print(f"  ... and {len(global_synced) - 5} more")
+                
+                # Now copy global commands to each guild
+                print(f"\nCopying global commands to guilds...")
+                for gid in guild_ids:
                     try:
+                        guild_id_int = int(str(gid).strip())
+                        
+                        # Verify bot is actually in this guild
+                        if guild_id_int not in bot_guild_ids:
+                            print(f"⚠ Warning: Bot is not in guild {guild_id_int}")
+                            print(f"  The bot must be invited to the server before commands can sync.")
+                            print(f"  Check that the bot is actually in the server.")
+                            continue
+                        
+                        g = discord.Object(id=guild_id_int)
+                        # Copy global commands to this guild
+                        self.tree.copy_global_to(guild=g)
+                        # Sync the copied commands
                         synced = await self.tree.sync(guild=g)
-                        # Get total commands count for comparison
-                        total_cmds = len(list(self.tree.walk_commands()))
-                        if len(synced) == 0 and total_cmds > 0:
-                            print(f"\n{'='*60}")
-                            print(f"✗ CRITICAL ERROR: 0 commands synced (but {total_commands} commands in tree)!")
-                            print(f"{'='*60}")
-                            print(f"This means the bot invite URL is MISSING 'applications.commands' scope!")
-                            print(f"Discord returned 0 commands because the bot doesn't have permission.")
-                            print(f"\nSOLUTION:")
-                            print(f"1. Go to: https://discord.com/developers/applications")
-                            print(f"2. Select your bot application")
-                            print(f"3. Go to OAuth2 → URL Generator")
-                            print(f"4. Check BOTH scopes:")
-                            print(f"   ✅ bot")
-                            print(f"   ✅ applications.commands  ← THIS IS CRITICAL!")
-                            print(f"5. Copy the generated URL")
-                            print(f"6. Re-invite the bot to your server (even if already in server)")
-                            print(f"7. Wait 1-2 minutes, then restart Discord")
-                            print(f"\nQuick URL (replace YOUR_BOT_ID with {self.user.id}):")
-                            print(f"https://discord.com/api/oauth2/authorize?client_id={self.user.id}&permissions=8&scope=bot%20applications.commands")
-                            print(f"{'='*60}\n")
-                        else:
-                            print(f"✓ Successfully synced {len(synced)} commands to guild {guild_id_int}")
-                            for cmd in synced[:10]:  # Show first 10
+                        print(f"✓ Guild {guild_id_int}: {len(synced)} commands synced")
+                        if synced and len(synced) > 0:
+                            for cmd in synced[:5]:
                                 print(f"  - {cmd.name}")
-                            if len(synced) > 10:
-                                print(f"  ... and {len(synced) - 10} more")
+                            if len(synced) > 5:
+                                print(f"  ... and {len(synced) - 5} more")
+                        elif len(synced) == 0:
+                            print(f"  ⚠ Warning: 0 commands synced to guild (but {len(global_synced)} global)")
+                            print(f"  This might be normal if commands are global-only")
+                    except ValueError as e:
+                        print(f"✗ Error: Invalid guild ID format '{gid}': {e}")
+                        print(f"  Guild IDs must be numeric. Check your config.yml")
                     except discord.HTTPException as e:
                         if e.status == 403:
-                            print(f"✗ CRITICAL: Forbidden (403) when syncing to guild {guild_id_int}")
-                            print(f"  The bot invite URL is MISSING 'applications.commands' scope!")
-                            print(f"  SOLUTION: Re-invite the bot with 'applications.commands' scope")
+                            print(f"✗ Error: Forbidden (403) when syncing to guild {guild_id_int}")
+                            print(f"  Possible causes:")
+                            print(f"  - Bot missing 'Use Application Commands' permission in server")
+                            print(f"  - Bot role position too low")
+                        elif e.status == 429:
+                            print(f"⚠ Rate limited. Waiting before retry...")
+                            await asyncio.sleep(5)
+                            # Retry once
+                            try:
+                                self.tree.copy_global_to(guild=g)
+                                synced = await self.tree.sync(guild=g)
+                                print(f"✓ Retry successful: synced {len(synced)} commands")
+                            except Exception as retry_error:
+                                print(f"✗ Retry failed: {retry_error}")
                         else:
+                            print(f"✗ HTTP Error {e.status}: {e}")
                             raise
-                except ValueError as e:
-                    print(f"✗ Error: Invalid guild ID format '{gid}': {e}")
-                    print(f"  Guild IDs must be numeric. Check your config.yml")
-                except discord.Forbidden:
-                    print(f"✗ Error: Missing permissions for guild {gid}")
-                    print(f"  The bot needs 'applications.commands' scope in the invite URL!")
-                    print(f"  Current invite URL likely missing: ?scope=bot%20applications.commands")
-                except discord.HTTPException as e:
-                    print(f"✗ Error: Discord API error syncing to guild {gid}: {e}")
-                    if e.status == 403:
-                        print(f"  This usually means the invite URL is missing 'applications.commands' scope")
-                    elif e.status == 404:
-                        print(f"  Bot is not in this guild or guild doesn't exist")
-                except Exception as e:
-                    print(f"✗ Error: Failed to sync commands for guild {gid}: {e}")
-                    import traceback
-                    traceback.print_exc()
+                
+            except Exception as global_error:
+                print(f"✗ Global sync failed: {global_error}")
+                print(f"  Falling back to per-guild sync...")
+                import traceback
+                traceback.print_exc()
+                
+                # Fallback: try syncing directly to each guild
+                for gid in guild_ids:
+                    try:
+                        guild_id_int = int(str(gid).strip())
+                        if guild_id_int not in bot_guild_ids:
+                            continue
+                        g = discord.Object(id=guild_id_int)
+                        synced = await self.tree.sync(guild=g)
+                        print(f"✓ Fallback sync to guild {guild_id_int}: {len(synced)} commands")
+                    except Exception as fallback_error:
+                        print(f"✗ Fallback sync failed for guild {gid}: {fallback_error}")
         else:
-            # No guild IDs specified, sync globally
-            synced = await self.tree.sync()
-            print(f"✓ Synced {len(synced)} global commands")
-            if synced:
-                for cmd in synced[:10]:  # Show first 10
-                    print(f"  - {cmd.name}")
-                if len(synced) > 10:
-                    print(f"  ... and {len(synced) - 10} more")
+            # No guild IDs specified - sync globally
+            print("No specific guild IDs found in config. Syncing globally...")
+            try:
+                synced = await self.tree.sync()
+                print(f"✓ Synced {len(synced)} global commands")
+                if synced:
+                    for cmd in synced[:10]:
+                        print(f"  - {cmd.name}")
+                    if len(synced) > 10:
+                        print(f"  ... and {len(synced) - 10} more")
+            except Exception as e:
+                print(f"✗ Global sync failed: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        self._commands_synced = True
         
         print(f"\n{'='*60}")
         print("SYNC VERIFICATION:")
