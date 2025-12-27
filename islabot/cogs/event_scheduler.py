@@ -86,8 +86,8 @@ class EventScheduler(commands.Cog):
         self.bot = bot
         if not hasattr(bot, "events"):
             bot.events = EventsManager(bot)  # fallback
-        self.orders_channel_id = int(bot.cfg.get("channels", "orders", fallback="0") or 0)
-        self.spotlight_channel_id = int(bot.cfg.get("channels", "spotlight", fallback="0") or 0)
+        self.orders_channel_id = int(bot.cfg.get("channels", "orders", default="0") or 0)
+        self.spotlight_channel_id = int(bot.cfg.get("channels", "spotlight", default="0") or 0)
 
         self.flush_loop.start()
         self.boss_loop.start()

@@ -91,7 +91,7 @@ class QuarterlyTax(commands.Cog):
 
     async def _get_orders_channel(self, guild: discord.Guild) -> discord.TextChannel | None:
         """Get the orders channel for tax announcements."""
-        ch_id = int(self.bot.cfg.get("channels", "orders", fallback="0") or 0)
+        ch_id = int(self.bot.cfg.get("channels", "orders", default="0") or 0)
         if not ch_id:
             return None
         ch = guild.get_channel(ch_id)

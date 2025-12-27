@@ -41,7 +41,7 @@ class VoiceTracker(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.spam_channel_id = int(bot.cfg.get("channels", "spam", fallback="0") or 0)
+        self.spam_channel_id = int(bot.cfg.get("channels", "spam", default="0") or 0)
 
         # Active voice sessions: (guild_id, user_id) -> last_tick_ts
         self.in_voice: dict[tuple[int, int], int] = {}

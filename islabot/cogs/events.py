@@ -386,8 +386,9 @@ class EventSystem(commands.Cog):
     # =========================================================
     #  A) PUBLIC COMMANDS
     # =========================================================
-    @app_commands.command(name="event", description="View the current active season/holiday, boss fight, and questboard.")
-    async def event(self, interaction: discord.Interaction):
+    # Removed: /event command (now handled by event_group.py)
+    # @app_commands.command(name="event", description="View the current active season/holiday, boss fight, and questboard.")
+    async def _event_legacy(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:

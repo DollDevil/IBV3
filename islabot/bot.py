@@ -105,9 +105,14 @@ class IslaBot(commands.Bot):
         guild_ids = self.cfg.get("guilds", default=[])
         if guild_ids:
             for gid in guild_ids:
-                g = discord.Object(id=int(gid))
-                self.tree.copy_global_to(guild=g)
-                await self.tree.sync(guild=g)
+                try:
+                    g = discord.Object(id=int(gid))
+                    self.tree.copy_global_to(guild=g)
+                    await self.tree.sync(guild=g)
+                except discord.Forbidden:
+                    print(f"Warning: Missing access to guild {gid}. Skipping command sync for this guild.")
+                except Exception as e:
+                    print(f"Warning: Failed to sync commands for guild {gid}: {e}")
         else:
             await self.tree.sync()
 

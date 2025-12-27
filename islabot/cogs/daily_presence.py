@@ -64,7 +64,14 @@ class DailyPresence(commands.Cog):
         self.tick.cancel()
 
     def _load_thoughts(self) -> dict:
-        path = self.bot.cfg.get("presence", "thoughts_path", default="data/isla_presence_thoughts.json")
+        import os
+        thoughts_path = self.bot.cfg.get("presence", "thoughts_path", default="data/isla_presence_thoughts.json")
+        # Make path relative to islabot directory
+        bot_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        path = os.path.join(bot_dir, thoughts_path)
+        if not os.path.exists(path):
+            # Return empty structure if file doesn't exist
+            return {"meta": {"author_icon_default": ""}, "routing": {}, "thoughts": {}}
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 

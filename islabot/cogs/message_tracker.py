@@ -33,7 +33,7 @@ class MessageTracker(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.spam_channel_id = int(bot.cfg.get("channels", "spam", fallback="0") or 0)
+        self.spam_channel_id = int(bot.cfg.get("channels", "spam", default="0") or 0)
 
         # key=(gid,event_id,uid,day_ymd) -> msg_count since last flush
         self.live_msg = defaultdict(int)

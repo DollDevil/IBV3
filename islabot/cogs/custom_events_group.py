@@ -69,7 +69,7 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
 class CustomEventsGroup(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.event = app_commands.Group(name="event", description="Server events")
+        self.calendar = app_commands.Group(name="calendar", description="Server calendar events")
 
         self._register()
 
@@ -114,7 +114,7 @@ class CustomEventsGroup(commands.Cog):
 
         e = isla_embed("Upcoming.\n᲼᲼", title="Events")
         e.add_field(name="List", value="\n".join(lines), inline=False)
-        e.set_footer(text="Join with /event join <event_id>")
+        e.set_footer(text="Join with /calendar join <event_id>")
         await interaction.followup.send(embed=e, ephemeral=True)
 
     # /event join <event_id>
@@ -206,13 +206,13 @@ class CustomEventsGroup(commands.Cog):
         await interaction.followup.send(embed=e, ephemeral=True)
 
     def _register(self):
-        self.event.add_command(self.create)
-        self.event.add_command(self.join)
-        self.event.add_command(self.leave)
-        self.event.add_command(self.list)
+        self.calendar.add_command(self.create)
+        self.calendar.add_command(self.join)
+        self.calendar.add_command(self.leave)
+        self.calendar.add_command(self.list)
 
 async def setup(bot: commands.Bot):
     cog = CustomEventsGroup(bot)
     await bot.add_cog(cog)
-    bot.tree.add_command(cog.event)
+    bot.tree.add_command(cog.calendar)
 

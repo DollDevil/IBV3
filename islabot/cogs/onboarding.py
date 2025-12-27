@@ -896,7 +896,7 @@ class StaffControls(app_commands.Group):
         gid = interaction.guild_id
         now = now_ts()
 
-                await ensure_user_row(self.cog.bot.db, gid, member.id)
+        await ensure_user_row(self.cog.bot.db, gid, member.id)
 
         await self.cog.bot.db.execute(
             "UPDATE users SET safeword_on=?, safeword_set_ts=? WHERE guild_id=? AND user_id=?",

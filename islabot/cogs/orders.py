@@ -363,8 +363,9 @@ class Orders(commands.Cog):
         return order_id
 
     # ------------------ slash commands ------------------
-    @app_commands.command(name="orders", description="View active orders.")
-    async def orders(self, interaction: discord.Interaction):
+    # Removed: /orders command (now handled by orders_group.py)
+    # @app_commands.command(name="orders", description="View active orders.")
+    async def _orders_legacy(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
