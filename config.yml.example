@@ -1,0 +1,47 @@
+# IslaBot Configuration
+# Copy this to config.yml and fill in your values
+
+token: "PUT_YOUR_BOT_TOKEN_HERE"
+
+guilds:
+  - 123456789012345678
+
+channels:
+  spotlight: 123
+  orders: 456
+  casino: 789
+  spam: 111
+  mod_logs: 222
+  announcements: 111111111111111111
+  logs: 333333333333333333
+
+roles:
+  verified_18: 555555555555555555
+  consent: 666666666666666666
+  humiliation_optin: 777777777777777777
+
+isla:
+  timezone: "Europe/London"
+  stage_cap: 2
+  dm_style_allowed: true
+
+economy:
+  daily_coins: 120
+  inactivity_tax_pct_daily: 5
+  burn_min: 10
+  burn_max: 5000
+
+orders:
+  max_active_per_user: 1
+  default_minutes: 90
+  penalty_debt: 25
+
+presence:
+  enabled: true
+  thoughts_path: "data/isla_presence_thoughts.json"
+  morning_start_window: "12:00-15:00"
+  sleep_window: "00:00-03:00"
+  awake_posts_per_day_min: 10
+  awake_posts_per_day_max: 25
+  spotlight_posts_per_day_max: 3
+

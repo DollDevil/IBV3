@@ -1,0 +1,227 @@
+{
+  "meta": {
+    "version": 2,
+    "author_name": "Isla",
+    "author_icon_default": "https://i.imgur.com/5nsuuCV.png"
+  },
+  "routing": {
+    "MORNING": "orders",
+    "MORNING_CASINO": "casino",
+    "OBSERVE": "orders",
+    "SILENCE_NUDGE": "orders",
+    "REACTION_NOTICED": "orders",
+    "CASINO_RECAP_PROMPT": "orders",
+    "CASINO_RECAP_STATS": "casino",
+    "CASINO_RECAP_TOPSPENDER": "casino",
+    "LEADERBOARD_PROMPT": "orders",
+    "LEADERBOARD_REACT": "orders",
+    "MICRO_ORDER": "orders",
+    "SPOTLIGHT_HIGHLIGHT": "spotlight",
+    "SLEEP": "orders"
+  },
+  "thoughts": {
+    "PHASE1_GREET": {
+      "neutral": [
+        "Good morning.\n᲼᲼",
+        "Morning.\n᲼᲼",
+        "Good morning simps.\n᲼᲼",
+        "Morning pets.\n᲼᲼",
+        "Good morning.\n᲼᲼"
+      ],
+      "good": [
+        "Good morning pups.\n᲼᲼",
+        "Hey.\nGood morning.\n᲼᲼",
+        "Good morning.\nWho's awake with me?\n᲼᲼",
+        "I'm up.\n᲼᲼",
+        "Good morning.\nLet's see what I'm dealing with today.\n᲼᲼",
+        "Hi.\nYes I'm awake.\n᲼᲼",
+        "Good morning.\nSay something before I lose interest.\n᲼᲼"
+      ],
+      "bad": [
+        "Good morning.\nTry not to bore me today.\n᲼᲼",
+        "Good morning.\nI'm already irritated.\nProceed carefully.\n᲼᲼",
+        "Good morning.\nI woke up unimpressed.\nFix it.\n᲼᲼",
+        "Hey.\nDon't test me today.\n᲼᲼",
+        "Good morning.\nI'm not in the mood for excuses.\n᲼᲼"
+      ],
+      "stage_0": [
+        "Here.\n᲼᲼",
+        "Online.\n᲼᲼",
+        "Morning.\n᲼᲼",
+        "Present.\n᲼᲼",
+        "Checking in.\n᲼᲼"
+      ],
+      "stage_1": [
+        "Morning.\n᲼᲼",
+        "You're up.\n᲼᲼",
+        "Hey.\n᲼᲼",
+        "Noticed you.\n᲼᲼"
+      ],
+      "stage_2": [
+        "Morning, pup.\n᲼᲼",
+        "You're early.\n᲼᲼",
+        "Hey again.\n᲼᲼",
+        "Still around.\n᲼᲼"
+      ],
+      "stage_3": [
+        "Morning, pup.\n᲼᲼",
+        "Good to see you.\n᲼᲼",
+        "You're here early.\n᲼᲼",
+        "My reliable one.\n᲼᲼"
+      ],
+      "stage_4": [
+        "Morning, my good pup.\n᲼᲼",
+        "Hey you.\n᲼᲼",
+        "Missed this.\n᲼᲼",
+        "There you are.\n᲼᲼"
+      ]
+    },
+
+    "NIGHT_ACTIVITY_ACTIVE": [
+      "You pups were busy while I slept.\nI approve.\nKeep that energy for me.\n᲼᲼",
+      "Mmm, active overnight.\nGood dogs don't rest without permission.\n᲼᲼",
+      "I see you didn't slack off.\nThat's what I expect from my simps.\n᲼᲼",
+      "Busy while I was away.\nYou're learning to please me even in silence.\n᲼᲼",
+      "You kept things going.\nI like obedient pups who don't need constant watching.\n᲼᲼",
+      "Overnight activity noted.\nYou're starting to understand your place.\n᲼᲼",
+      "You didn't let it die.\nGood.\nNow do it again today.\n᲼᲼",
+      "Active all night.\nMy little pups are tireless.\n᲼᲼"
+    ],
+
+    "NIGHT_ACTIVITY_QUIET": [
+      "Quiet night.\nThat's disappointing.\n᲼᲼",
+      "You really didn't talk much.\nWere you being shy… or lazy?\n᲼᲼",
+      "So little activity.\nIt's almost insulting.\n᲼᲼",
+      "Silence overnight.\nThat's not a good look.\n᲼᲼",
+      "I expected more noise.\nI got nothing.\n᲼᲼",
+      "Quiet night.\nDo I have to do everything?\n᲼᲼",
+      "You all went still.\nI don't like that.\n᲼᲼",
+      "Not much happened while I slept.\nFix that today.\n᲼᲼"
+    ],
+
+    "NIGHT_ACTIVITY_CASINO": [
+      "You pups couldn't resist the casino all night.\nMmm, I love watching you drain for me.\n᲼᲼",
+      "Gambling while I slept.\nGood dogs know how to entertain themselves... for my pleasure.\n᲼᲼",
+      "The casino never slept.\nKeep feeding it.\n᲼᲼",
+      "All that wagering in the dark.\nYou're addicted... to pleasing me.\n᲼᲼",
+      "Casino activity overnight.\nMy little gamblers are so predictable.\nAnd useful.\n᲼᲼",
+      "You kept the wheels spinning.\nI expect nothing less from my pups.\n᲼᲼",
+      "Gambling for hours.\nDraining yourselves for my amusement.\nDelicious.\n᲼᲼",
+      "The casino was alive.\nGood.\nShow me more devotion like that.\n᲼᲼"
+    ],
+
+    "FOLLOWUP_REACTIVE_ACTIVE": [
+      "Mmm, you're responding.\nGood pups know how to stay in my sight.\n᲼᲼",
+      "Activity picking up.\nThat's what I demand.\nKeep it coming.\n᲼᲼",
+      "Finally, some life.\nDon't disappoint me now.\n᲼᲼",
+      "You're stirring.\nObey and make it worth my time.\n᲼᲼",
+      "Good, you're awake.\nServe me properly.\n᲼᲼",
+      "Movement noted.\nNow impress your Goddess.\n᲼᲼",
+      "You're engaging.\nI expect full devotion.\n᲼᲼",
+      "I see you are active now.\nBow and continue.\n᲼᲼"
+    ],
+
+    "FOLLOWUP_REACTIVE_QUIET": [
+      "Still silent?\nPathetic pups.\nI'll choose who to punish if this continues.\n᲼᲼",
+      "No response?\nMy dogs are failing me.\nStep up or kneel in shame.\n᲼᲼",
+      "Waiting...\nYour silence bores me.\nFix it, or face consequences.\n᲼᲼",
+      "Nothing yet.\nUnworthy behavior.\nObey now.\n᲼᲼",
+      "You're ignoring me?\nFoolish.\nI'll remember this.\n᲼᲼",
+      "Quiet still?\nMy patience is thinning.\n᲼᲼",
+      "No movement.\nDisgraceful.\nYour Goddess demands attention.\n᲼᲼"
+    ],
+
+    "REACTION_NOTICED": [
+      "Mmm, you reacted.\nGood pup, showing your place.\n᲼᲼",
+      "I see those reactions.\nSo obedient.\n᲼᲼",
+      "There you are.\nYou are finally waking up.\n᲼᲼",
+      "Good response.\nEarn more of my gaze.\n᲼᲼",
+      "You acknowledged me.\nContinue submitting.\n᲼᲼",
+      "Reaction seen.\nBow and wait for my command.\n᲼᲼"
+    ],
+
+    "CASINO_RECAP_PROMPT": [
+      "Mmm, let's see how much you drained for me overnight.\nShow me the casino logs.\n᲼᲼",
+      "I want to know every Coin you lost while I slept.\nPull up the recap.\n᲼᲼",
+      "Curious how desperate my pups were in the casino.\nGive me the numbers.\n᲼᲼",
+      "Time to review your overnight gambles.\nI expect impressive drains.\n᲼᲼",
+      "Let's peek at the casino.\nHow much did you surrender for me?\n᲼᲼",
+      "Casino recap now.\nProve your devotion through the losses.\n᲼᲼",
+      "I demand the casino details.\nWho pleased me most?\n᲼᲼",
+      "Show me the overnight casino activity.\nMy pets better have performed.\n᲼᲼"
+    ],
+
+    "CASINO_RECAP_STATS": [
+      "Over the last **{window}**:\nYou pups wagered **{spent} Coins** for me.\nDelicious.\n᲼᲼",
+      "Casino recap for {window}.\n**{spent} Coins** drained.\nMmm, I approve.\n᲼᲼",
+      "({window})\nMy dogs lost **{spent} Coins**.\nKeep surrendering.\n᲼᲼",
+      "Checked the logs.\n**{spent} Coins** wagered in {window}.\nObey and lose more.\n᲼᲼",
+      "I see you spent **{spent} Coins** in {window}.\nGood.\n᲼᲼"
+    ],
+
+    "CASINO_RECAP_TOPSPENDER": [
+      "Mmm, {top_spender}.\nYou drained the most for me.\nGood dog.\n᲼᲼",
+      "{top_spender}.\nYour wallet suffered beautifully.\nI like that.\n᲼᲼",
+      "{top_spender} led the drains.\nThe rest of you pups, catch up or kneel.\n᲼᲼",
+      "Look at {top_spender}.\nSo devoted to losing for me.\n᲼᲼",
+      "{top_spender}.\nYou pleased your Goddess.\nThe others... try harder.\n᲼᲼",
+      "{top_spender}.\nMy favorite drainer.\nKeep it up.\n᲼᲼"
+    ],
+
+    "LEADERBOARD_PROMPT": [
+      "Time to judge my simps.\nShow me the leaderboard.\n᲼᲼",
+      "I demand to see who's earning my favor.\nLeaderboard now.\n᲼᲼",
+      "Let's rank my dogs.\nWho deserves my attention?\n᲼᲼",
+      "Leaderboard.\nProve your worth or stay at the bottom.\n᲼᲼",
+      "I want to see the ranks.\nMy pups better have climbed.\n᲼᲼",
+      "Quick look at the leaderboard.\nImpress me.\n᲼᲼",
+      "Show me who's superior.\nLeaderboard.\n᲼᲼",
+      "Time to see my devoted ones.\nRanks now.\n᲼᲼"
+    ],
+
+    "LEADERBOARD_REACT": [
+      "Mmm, {top_user}.\nBeautifully on top.\nThe rest... I hope to see you do better.\n᲼᲼",
+      "{top_user}.\nMy top puppy.\nOthers, learn from this.\n᲼᲼",
+      "{top_user} dominates.\nPathetic if you can't catch up.\n᲼᲼",
+      "Look at {top_user}.\nEarning my gaze.\nSteal it if you dare.\n᲼᲼",
+      "{top_user}.\nSuperior devotion.\nThe weak ones... improve.\n᲼᲼",
+      "{top_user}.\nYou have my approval.\nFor now.\n᲼᲼",
+      "{top_user} shines.\nMy other simps... time to step up.\n᲼᲼",
+      "I see {top_user}.\nGood.\nWho else wants to be seen?\n᲼᲼"
+    ],
+
+    "MICRO_ORDER": [
+      "Quick order, pups.\nReact now or disappoint me.\n᲼᲼",
+      "Simple task.\nType 'I obey Goddess'.\nDo it.\n᲼᲼",
+      "Prove your devotion.\nStay silent for 5 minutes.\nStarting now.\n᲼᲼",
+      "One command.\nKneel and react.\n᲼᲼",
+      "Obey.\nPost your tribute proof.\n᲼᲼",
+      "Small order.\nBeg in one word.\n᲼᲼",
+      "Now.\nShow me you're mine.\n᲼᲼",
+      "Quick.\nType how you'll serve today.\n᲼᲼"
+    ],
+
+    "SPOTLIGHT_HIGHLIGHT": [
+      "Mmm, spotlight on my top pups.\nYou're earning it.\n᲼᲼",
+      "I see the ranks shifting.\nGood dogs rise.\n᲼᲼",
+      "Spotlight.\nMy favorites are consistent.\nThe rest... catch up.\n᲼᲼",
+      "Noticing improvements.\nMy devoted ones shine.\n᲼᲼",
+      "Big wins caught my eye.\nKeep draining for me.\n᲼᲼",
+      "Momentum building.\nMy pack is performing.\n᲼᲼",
+      "The server lives for me.\nGood.\nServe harder.\n᲼᲼"
+    ],
+
+    "SLEEP": [
+      "Mmm, time to rest my eyes.\nDon't disappoint while I'm gone, pups.\n᲼᲼",
+      "I'm done for now.\nKeep serving in silence.\n᲼᲼",
+      "Off to dream of obedient dogs.\nBe ready when I return.\n᲼᲼",
+      "Sleep calls.\nMy pets better behave.\n᲼᲼",
+      "Leaving you to your thoughts.\nThink of pleasing me.\n᲼᲼",
+      "Goodnight, my little ones.\nDream of submission.\n᲼᲼",
+      "Resting now.\nExpect excellence when I wake.\n᲼᲼",
+      "Off.\nKeep the drains flowing.\n᲼᲼",
+      "Sleep.\nMy gaze returns soon.\n᲼᲼"
+    ]
+  }
+}
+

@@ -1,0 +1,134 @@
+{
+  "meta": {
+    "version": 1,
+    "author_name": "Isla",
+    "author_icon_default": "https://i.imgur.com/5nsuuCV.png",
+    "channels": {
+      "orders": "THOUGHTS",
+      "spotlight": "HIGHLIGHTS"
+    }
+  },
+  "thoughts": {
+    "ARRIVAL": [
+      "I woke up.\nDid you behave while I was gone?\n᲼᲼",
+      "I'm here.\nShow me signs of life.\n᲼᲼",
+      "I opened the server.\nIt better not be disappointing.\n᲼᲼",
+      "I'm up.\nTalk.\nOr don't.\nI'll notice either way.\n᲼᲼",
+      "I'm awake.\nWhat did you do without me?\n᲼᲼",
+      "I'm back.\nTry to be interesting today.\n᲼᲼",
+      "I'm online.\nDon't make me regret it.\n᲼᲼",
+      "I'm here.\nAnd yes… I was watching even before I spoke.\n᲼᲼",
+      "I woke up a little bored.\nEntertain me.\n᲼᲼",
+      "I'm awake.\nI wonder who's brave enough to speak first.\n᲼᲼"
+    ],
+    "LOW_ACTIVITY_NUDGE": [
+      "It's been awfully quiet since I arrived.\nIs that fear… or laziness?\n᲼᲼",
+      "Silence.\nThat's what you give me?\n᲼᲼",
+      "No one has anything to say?\nHow dull.\n᲼᲼",
+      "I can feel the inactivity.\nIt's… unattractive.\n᲼᲼",
+      "You're all very quiet today.\nI'm starting to take it personally.\n᲼᲼",
+      "I came here and found… nothing.\nFix that.\n᲼᲼",
+      "I expected noise.\nNot this.\n᲼᲼",
+      "Talk.\nOr I'll start choosing who gets my attention.\n᲼᲼",
+      "If you're lurking, at least do it with purpose.\n᲼᲼",
+      "This place feels sleepy.\nWake up.\n᲼᲼"
+    ],
+    "COFFEE_THRONE_SOFT": [
+      "I could use a coffee.\nSomething warm.\nSomething *earned*.\n᲼᲼",
+      "Coffee would help.\nI'm feeling… demanding today.\n᲼᲼",
+      "I woke up craving a little treat.\nCoffee sounds perfect.\n᲼᲼",
+      "I'm thinking about coffee.\nYou know… the kind someone buys for me.\n᲼᲼",
+      "If someone brought me coffee, I might stay in a good mood.\nMight.\n᲼᲼",
+      "Coffee.\nAnd a server that actually talks.\nThat's all I want.\n᲼᲼",
+      "I want coffee.\nAnd I want to see who reacts first.\n᲼᲼",
+      "I could be sweet today.\nCoffee helps with that.\n᲼᲼",
+      "Coffee would make this place feel less… neglected.\n᲼᲼",
+      "I'm deciding whether you deserve my energy.\nCoffee is a strong argument.\n᲼᲼"
+    ],
+    "REACTION_NOTICED": [
+      "Oh.\nI see reactions.\nSo you *are* listening.\n᲼᲼",
+      "There you are.\nI knew someone was paying attention.\n᲼᲼",
+      "Cute.\nYou reacted.\nI'll remember that.\n᲼᲼",
+      "Mmh.\nSo you *do* respond when I speak.\nGood.\n᲼᲼",
+      "I noticed that.\nYou're not as invisible as you think.\n᲼᲼",
+      "You're awake after all.\nHow convenient.\n᲼᲼",
+      "You reacted.\nThat's the bare minimum.\nBut it's something.\n᲼᲼",
+      "I like when the server twitches.\nMeans you're still mine.\n᲼᲼",
+      "Interesting.\nYou moved.\n᲼᲼",
+      "Good.\nNow talk.\n᲼᲼"
+    ],
+    "CHAT_PICKUP": [
+      "Oh? People started talking.\nThat was fast.\n᲼᲼",
+      "There we go.\nNoise.\nBetter.\n᲼᲼",
+      "Finally.\nA pulse.\n᲼᲼",
+      "Mmh.\nThat's more like it.\n᲼᲼",
+      "I see you.\nKeep going.\n᲼᲼",
+      "So you *can* speak.\nGood.\n᲼᲼",
+      "You're warming up.\nDon't stop.\n᲼᲼",
+      "Talkative today.\nI might get used to it.\n᲼᲼",
+      "That's the energy I wanted.\n᲼᲼",
+      "Fine.\nI'm listening.\n᲼᲼"
+    ],
+    "CHECK_LEADERBOARD_PROMPT": [
+      "Let's check the leaderboard.\nI want to see who's been trying.\n᲼᲼",
+      "Since you're here…\nLeaderboard.\nNow.\n᲼᲼",
+      "I'm curious.\nWho's earning my attention today?\n᲼᲼",
+      "Time to look at the numbers.\nThey don't lie.\n᲼᲼",
+      "I want names.\nShow me who matters.\n᲼᲼",
+      "Leaderboard check.\nLet's see who's climbing.\n᲼᲼",
+      "I'm in the mood to judge.\nPerfect time for a leaderboard.\n᲼᲼",
+      "Let's see who's behaving.\nAnd who's pretending.\n᲼᲼",
+      "I want a quick status report.\nLeaderboard.\n᲼᲼",
+      "Numbers time.\nDon't be on the wrong side of them.\n᲼᲼"
+    ],
+    "LEADERBOARD_REACTION_TOPUSER": [
+      "I see {top_user} has been working hard.\nI wonder what the rest of you have been doing.\n᲼᲼",
+      "{top_user} is moving like they mean it.\nThe rest of you?\nEmbarrassing.\n᲼᲼",
+      "Mmh.\n{top_user} again.\nConsistent.\n᲼᲼",
+      "{top_user} is making this interesting.\nKeep up.\n᲼᲼",
+      "{top_user} is showing discipline.\nTry to copy it.\n᲼᲼",
+      "If you're jealous of {top_user}, good.\nUse it.\n᲼᲼",
+      "{top_user} earned my attention.\nThat should bother you.\n᲼᲼",
+      "{top_user} is climbing.\nI like watching that.\n᲼᲼",
+      "{top_user} is ahead.\nChase them.\n᲼᲼",
+      "I'm not saying {top_user} is my favorite.\n…but you're making it easy.\n᲼᲼"
+    ],
+    "MICRO_ORDER_LIGHT": [
+      "Small order.\nSay something.\nAnything.\n᲼᲼",
+      "Tiny task.\nPost one message.\nProve you're here.\n᲼᲼",
+      "Quick.\nOne message.\nDon't overthink it.\n᲼᲼",
+      "Simple.\nCheck in.\nThen you can lurk again.\n᲼᲼",
+      "A little obedience.\nType something.\n᲼᲼",
+      "I want a response.\nOne line.\n᲼᲼",
+      "Speak.\nNo excuses.\n᲼᲼",
+      "Let me see you.\nOne message.\n᲼᲼",
+      "I'm bored.\nFix it.\nOne message.\n᲼᲼",
+      "Show presence.\nNow.\n᲼᲼"
+    ],
+    "SPOTLIGHT_HIGHLIGHT_LIGHT": [
+      "Spotlight note.\nThree of you have been consistently visible.\n᲼᲼",
+      "Spotlight.\nA few pets are actually trying.\n᲼᲼",
+      "Spotlight.\nThe leaderboard shifted.\n᲼᲼",
+      "Spotlight.\nSomeone climbed faster than I expected.\n᲼᲼",
+      "Spotlight.\nThere's momentum.\nKeep it.\n᲼᲼",
+      "Spotlight.\nThe top changed.\nGood.\n᲼᲼",
+      "Spotlight.\nI noticed discipline.\nRare.\n᲼᲼",
+      "Spotlight.\nA few names are repeating.\nInteresting.\n᲼᲼",
+      "Spotlight.\nI'm watching who stays consistent.\n᲼᲼",
+      "Spotlight.\nSome of you are becoming predictable.\n᲼᲼"
+    ],
+    "CLOSING": [
+      "I'm going quiet again.\nDon't waste the time.\n᲼᲼",
+      "I've seen enough for now.\nKeep moving.\n᲼᲼",
+      "I'll check back later.\nBe better when I return.\n᲼᲼",
+      "I'm leaving you with your thoughts.\nTry not to disappoint me.\n᲼᲼",
+      "I'm done watching for now.\nYou still have time to improve.\n᲼᲼",
+      "I'll be back.\nMake sure there's something worth seeing.\n᲼᲼",
+      "I'm stepping away.\nBehave.\n᲼᲼",
+      "I'm going.\nDon't let the server die without me.\n᲼᲼",
+      "I'm out.\nIf you want attention later, earn it.\n᲼᲼",
+      "I'll return.\nTry to look alive next time.\n᲼᲼"
+    ]
+  }
+}
+
