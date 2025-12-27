@@ -85,11 +85,21 @@ class IslaBot(commands.Bot):
         self.personality.sanitize()
 
     async def setup_hook(self):
-        await self.db.connect()
-        await self.db.migrate()
+        try:
+            await self.db.connect()
+            await self.db.migrate()
+        except Exception as e:
+            print(f"Database error during setup: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
         for ext in COGS:
-            await self.load_extension(ext)
+            try:
+                await self.load_extension(ext)
+            except Exception as e:
+                print(f"Warning: Failed to load extension {ext}: {e}")
+                # Continue loading other extensions
 
         # Sync slash commands (per guild for fast iteration)
         guild_ids = self.cfg.get("guilds", default=[])
@@ -210,9 +220,17 @@ casino_recap:
         print("=" * 60)
         sys.exit(1)
     
-    db = Database(db_path)
-    bot = IslaBot(cfg, db)
-    await bot.start(cfg["token"])
+    try:
+        db = Database(db_path)
+        bot = IslaBot(cfg, db)
+        await bot.start(cfg["token"])
+    except KeyboardInterrupt:
+        print("\nBot shutdown requested by user")
+    except Exception as e:
+        print(f"Fatal error starting bot: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 if __name__ == "__main__":
     asyncio.run(main())
