@@ -12,6 +12,10 @@ BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 if BOT_DIR not in sys.path:
     sys.path.insert(0, BOT_DIR)
 
+# Use full module path for cogs when running as module (Railway)
+# Check if we're being run as a module (python -m islabot.bot)
+COG_PREFIX = "islabot." if __package__ else ""
+
 from core.config import Config
 from core.db import Database
 from core.flags import FlagService
@@ -19,45 +23,43 @@ from core.channel_cfg import ChannelConfigService
 from core.personality import Personality
 from core.tone import DEFAULT_POOLS
 
-# BOT_DIR already defined above
-
 COGS = [
-    "cogs.alive",
-    "cogs.moderation",
-    "cogs.onboarding",
-    "cogs.economy",
-    "cogs.progression",
-    "cogs.shop",
-    "cogs.profile",
-    "cogs.voice_stats",
-    "cogs.casino_core",
-    "cogs.casino_games",
-    "cogs.casino_bigwin_dm",
-    "cogs.casino_royalty",
-    "cogs.casino_daily_recap",
-    "cogs.orders",
-    "cogs.events",
+    f"{COG_PREFIX}cogs.alive",
+    f"{COG_PREFIX}cogs.moderation",
+    f"{COG_PREFIX}cogs.onboarding",
+    f"{COG_PREFIX}cogs.economy",
+    f"{COG_PREFIX}cogs.progression",
+    f"{COG_PREFIX}cogs.shop",
+    f"{COG_PREFIX}cogs.profile",
+    f"{COG_PREFIX}cogs.voice_stats",
+    f"{COG_PREFIX}cogs.casino_core",
+    f"{COG_PREFIX}cogs.casino_games",
+    f"{COG_PREFIX}cogs.casino_bigwin_dm",
+    f"{COG_PREFIX}cogs.casino_royalty",
+    f"{COG_PREFIX}cogs.casino_daily_recap",
+    f"{COG_PREFIX}cogs.orders",
+    f"{COG_PREFIX}cogs.events",
     # Event system (load in order: voice -> message -> scheduler -> commands)
-    "cogs.voice_tracker",
-    "cogs.message_tracker",
-    "cogs.event_scheduler",
-    "cogs.event_group",  # /event group with subcommands
-    "cogs.daily_presence",
-    "cogs.vacation_watch",
-    "cogs.safeword",
-    "cogs.info_unified",
-    "cogs.quarterly_tax",
-    "cogs.privacy",
-    "cogs.admin_tools",
-    "cogs.core_commands",
-    "cogs.coins_group",
-    "cogs.orders_group",
-    "cogs.discipline_group",
-    "cogs.duel_cog",
-    "cogs.custom_events_group",
-    "cogs.announce_and_remind",
-    "cogs.config_group",
-    "cogs.context_apps",
+    f"{COG_PREFIX}cogs.voice_tracker",
+    f"{COG_PREFIX}cogs.message_tracker",
+    f"{COG_PREFIX}cogs.event_scheduler",
+    f"{COG_PREFIX}cogs.event_group",  # /event group with subcommands
+    f"{COG_PREFIX}cogs.daily_presence",
+    f"{COG_PREFIX}cogs.vacation_watch",
+    f"{COG_PREFIX}cogs.safeword",
+    f"{COG_PREFIX}cogs.info_unified",
+    f"{COG_PREFIX}cogs.quarterly_tax",
+    f"{COG_PREFIX}cogs.privacy",
+    f"{COG_PREFIX}cogs.admin_tools",
+    f"{COG_PREFIX}cogs.core_commands",
+    f"{COG_PREFIX}cogs.coins_group",
+    f"{COG_PREFIX}cogs.orders_group",
+    f"{COG_PREFIX}cogs.discipline_group",
+    f"{COG_PREFIX}cogs.duel_cog",
+    f"{COG_PREFIX}cogs.custom_events_group",
+    f"{COG_PREFIX}cogs.announce_and_remind",
+    f"{COG_PREFIX}cogs.config_group",
+    f"{COG_PREFIX}cogs.context_apps",
 ]
 
 class IslaBot(commands.Bot):
