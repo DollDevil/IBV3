@@ -192,6 +192,7 @@ class Onboarding(commands.Cog):
         # configure in your config
         self.welcome_channel_id = int(bot.cfg.get("channels", "welcome", default=0) or 0)
         self.rules_channel_id = int(bot.cfg.get("channels", "rules", default=0) or 0)
+        self.roles_channel_id = int(bot.cfg.get("channels", "roles", default=0) or 0)
         self.intro_channel_id = int(bot.cfg.get("channels", "introductions", default=0) or 0)
         self.spam_channel_id = int(bot.cfg.get("channels", "spam", default=0) or 0)
 
@@ -330,20 +331,54 @@ class Onboarding(commands.Cog):
             (guild.id, member.id, now_ts(), 0)
         )
 
-        # Welcome message (no buttons/view)
+        # Welcome message with new format
         ping = f"||{member.mention}||"
-        rules_mention = f"<#{self.rules_channel_id}>" if self.rules_channel_id else "#rules"
-        e = isla_embed(WELCOME_UNVERIFIED["description"], title=WELCOME_UNVERIFIED["title"])
-        # Replace #rules placeholder with actual mention
-        fields = []
-        for n, v in WELCOME_UNVERIFIED["fields"]:
-            # Replace #rules with actual channel mention in field values
-            v_processed = v.replace("#rules", rules_mention) if self.rules_channel_id else v
-            fields.append((n, v_processed))
-        for n, v in fields:
-            e.add_field(name=n, value=v, inline=False)
-        e.set_footer(text=WELCOME_UNVERIFIED["footer"])
-        await welcome.send(content=ping, embed=e)
+        
+        # Get channel mentions from config
+        rules_channel_mention = f"<#{self.rules_channel_id}>" if self.rules_channel_id else "#rules"
+        roles_channel_mention = f"<#{self.roles_channel_id}>" if self.roles_channel_id else "#roles"
+        
+        # Create welcome embed
+        embed = discord.Embed(
+            description=f"Welcome to Isla://domain {member.mention}\n᲼᲼",
+            colour=0x65566c
+        )
+        
+        embed.set_author(
+            name="System Message",
+            icon_url="https://i.imgur.com/irmCXhw.gif"
+        )
+        
+        embed.add_field(
+            name="<:rules1:1454433030553997454> Rules",
+            value=f"Accept Rules {rules_channel_mention}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="<:roles2:1454433023779930183> Roles",
+            value=f"Get Roles {roles_channel_mention}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="<:rocket2:1454433022580359235> Getting Started",
+            value="After accepting rules, you will receive a DM to get started.",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="᲼᲼",
+            value="",
+            inline=False
+        )
+        
+        embed.set_footer(
+            text="Having issues? Type /support",
+            icon_url="https://i.imgur.com/irmCXhw.gif"
+        )
+        
+        await welcome.send(content=ping, embed=embed)
 
     # -------- button handlers --------
     async def handle_accept_rules(self, interaction: discord.Interaction):
@@ -922,6 +957,83 @@ class StaffControls(app_commands.Group):
             ),
             ephemeral=True
         )
+
+    @app_commands.command(name="test_welcome", description="Test the welcome message (staff).")
+    @app_commands.describe(member="Member to test with (defaults to you)")
+    async def test_welcome(self, interaction: discord.Interaction, member: discord.Member | None = None):
+        if not staff_check(interaction):
+            return await interaction.response.send_message("No.", ephemeral=True)
+        
+        if not interaction.guild:
+            return await interaction.response.send_message("Server only.", ephemeral=True)
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        # Use provided member or the command user
+        test_member = member if member else (interaction.user if isinstance(interaction.user, discord.Member) else None)
+        if not test_member:
+            return await interaction.followup.send("Could not get member.", ephemeral=True)
+        
+        # Get welcome channel
+        welcome_channel_id = int(self.cog.bot.cfg.get("channels", "welcome", default=0) or 0)
+        welcome = interaction.guild.get_channel(welcome_channel_id) if welcome_channel_id else None
+        
+        if not welcome or not isinstance(welcome, discord.TextChannel):
+            return await interaction.followup.send(
+                f"Welcome channel not configured or not found. Set it in config.yml or use /config channels.",
+                ephemeral=True
+            )
+        
+        # Get channel mentions from config
+        rules_channel_id = int(self.cog.bot.cfg.get("channels", "rules", default=0) or 0)
+        roles_channel_id = int(self.cog.bot.cfg.get("channels", "roles", default=0) or 0)
+        
+        rules_channel_mention = f"<#{rules_channel_id}>" if rules_channel_id else "#rules"
+        roles_channel_mention = f"<#{roles_channel_id}>" if roles_channel_id else "#roles"
+        
+        # Create welcome embed
+        embed = discord.Embed(
+            description=f"Welcome to Isla://domain {test_member.mention}\n᲼᲼",
+            colour=0x65566c
+        )
+        
+        embed.set_author(
+            name="System Message",
+            icon_url="https://i.imgur.com/irmCXhw.gif"
+        )
+        
+        embed.add_field(
+            name="<:rules1:1454433030553997454> Rules",
+            value=f"Accept Rules {rules_channel_mention}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="<:roles2:1454433023779930183> Roles",
+            value=f"Get Roles {roles_channel_mention}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="<:rocket2:1454433022580359235> Getting Started",
+            value="After accepting rules, you will receive a DM to get started.",
+            inline=False
+        )
+        
+        embed.add_field(
+            name="᲼᲼",
+            value="",
+            inline=False
+        )
+        
+        embed.set_footer(
+            text="Having issues? Type /support",
+            icon_url="https://i.imgur.com/irmCXhw.gif"
+        )
+        
+        ping = f"||{test_member.mention}||"
+        await welcome.send(content=ping, embed=embed)
+        await interaction.followup.send(f"Test welcome message sent in {welcome.mention}!", ephemeral=True)
 
     @app_commands.command(name="safeword_status", description="View a user's safeword status (staff).")
     @app_commands.describe(member="Target")
