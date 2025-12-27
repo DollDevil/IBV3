@@ -110,25 +110,94 @@ async def main():
     config_path = os.path.join(BOT_DIR, "config.yml")
     db_path = os.path.join(BOT_DIR, "islabot.sqlite3")
     
-    # Check if config.yml exists
+    # Check if config.yml exists, if not try to create from environment variables
     if not os.path.exists(config_path):
         print("=" * 60)
-        print("ERROR: config.yml file not found!")
+        print("config.yml not found. Attempting to create from environment variables...")
         print("=" * 60)
-        print(f"Expected location: {config_path}")
-        print("\nTo fix this:")
-        print("1. Create config.yml in the islabot/ directory")
-        print("2. Add your bot token and configuration")
-        print("3. On Railway: Use the file editor or upload via Variables")
-        print("\nExample config.yml structure:")
-        print("  token: \"YOUR_BOT_TOKEN_HERE\"")
-        print("  guilds:")
-        print("    - YOUR_GUILD_ID")
-        print("  channels:")
-        print("    spotlight: CHANNEL_ID")
-        print("    # ... other settings")
-        print("=" * 60)
-        sys.exit(1)
+        
+        # Try to create config.yml from environment variables (Railway compatible)
+        token = os.getenv("DISCORD_BOT_TOKEN")
+        if token:
+            # Create basic config from environment variables
+            config_content = f"""token: "{token}"
+
+guilds:
+  - {os.getenv("DISCORD_GUILDS", "123456789012345678")}
+
+channels:
+  spotlight: {os.getenv("CHANNEL_SPOTLIGHT", "123")}
+  orders: {os.getenv("CHANNEL_ORDERS", "456")}
+  casino: {os.getenv("CHANNEL_CASINO", "789")}
+  spam: {os.getenv("CHANNEL_SPAM", "111")}
+  mod_logs: {os.getenv("CHANNEL_MOD_LOGS", "222")}
+  announcements: {os.getenv("CHANNEL_ANNOUNCEMENTS", "111111111111111111")}
+  logs: {os.getenv("CHANNEL_LOGS", "333333333333333333")}
+
+roles:
+  verified_18: {os.getenv("ROLE_VERIFIED_18", "555555555555555555")}
+  consent: {os.getenv("ROLE_CONSENT", "666666666666666666")}
+  humiliation_optin: {os.getenv("ROLE_HUMILIATION_OPTIN", "777777777777777777")}
+
+isla:
+  timezone: "Europe/London"
+  stage_cap: 2
+  dm_style_allowed: true
+
+economy:
+  daily_coins: 120
+  inactivity_tax_pct_daily: 5
+  burn_min: 10
+  burn_max: 5000
+
+orders:
+  max_active_per_user: 1
+  default_minutes: 90
+  penalty_debt: 25
+
+presence:
+  enabled: true
+  thoughts_path: "data/isla_presence_thoughts.json"
+  morning_start_window: "12:00-15:00"
+  sleep_window: "00:00-03:00"
+  awake_posts_per_day_min: 10
+  awake_posts_per_day_max: 25
+  spotlight_posts_per_day_max: 3
+  low_activity_msg_threshold: 18
+  low_activity_unique_threshold: 6
+  reaction_threshold: 3
+  mood_awake_fast_mult: 0.7
+  mood_tired_slow_mult: 1.4
+
+casino_recap:
+  min_total_wagered: 25000
+  min_rounds: 120
+  min_unique_players: 25
+  time_uk: "21:15"
+"""
+            try:
+                with open(config_path, "w", encoding="utf-8") as f:
+                    f.write(config_content)
+                print(f"✓ Created config.yml from environment variables at {config_path}")
+            except Exception as e:
+                print(f"✗ Failed to create config.yml: {e}")
+                sys.exit(1)
+        else:
+            print("ERROR: config.yml file not found and DISCORD_BOT_TOKEN not set!")
+            print("=" * 60)
+            print(f"Expected location: {config_path}")
+            print("\nTo fix this:")
+            print("1. Create config.yml in the islabot/ directory, OR")
+            print("2. Set DISCORD_BOT_TOKEN environment variable in Railway")
+            print("\nExample config.yml structure:")
+            print("  token: \"YOUR_BOT_TOKEN_HERE\"")
+            print("  guilds:")
+            print("    - YOUR_GUILD_ID")
+            print("  channels:")
+            print("    spotlight: CHANNEL_ID")
+            print("    # ... other settings")
+            print("=" * 60)
+            sys.exit(1)
     
     cfg = Config.load(config_path)
     
