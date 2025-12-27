@@ -231,15 +231,42 @@ class IslaBot(commands.Bot):
                     g = discord.Object(id=guild_id_int)
                     # Sync directly to guild (don't use copy_global_to - that's for copying global commands)
                     print(f"Syncing commands to guild {guild_id_int}...")
-                    synced = await self.tree.sync(guild=g)
-                    print(f"✓ Successfully synced {len(synced)} commands to guild {guild_id_int}")
-                    if synced:
-                        for cmd in synced[:10]:  # Show first 10
-                            print(f"  - {cmd.name}")
-                        if len(synced) > 10:
-                            print(f"  ... and {len(synced) - 10} more")
-                    else:
-                        print(f"  ⚠ No commands were synced (this might indicate a problem)")
+                    try:
+                        synced = await self.tree.sync(guild=g)
+                        # Get total commands count for comparison
+                        total_cmds = len(list(self.tree.walk_commands()))
+                        if len(synced) == 0 and total_cmds > 0:
+                            print(f"\n{'='*60}")
+                            print(f"✗ CRITICAL ERROR: 0 commands synced (but {total_commands} commands in tree)!")
+                            print(f"{'='*60}")
+                            print(f"This means the bot invite URL is MISSING 'applications.commands' scope!")
+                            print(f"Discord returned 0 commands because the bot doesn't have permission.")
+                            print(f"\nSOLUTION:")
+                            print(f"1. Go to: https://discord.com/developers/applications")
+                            print(f"2. Select your bot application")
+                            print(f"3. Go to OAuth2 → URL Generator")
+                            print(f"4. Check BOTH scopes:")
+                            print(f"   ✅ bot")
+                            print(f"   ✅ applications.commands  ← THIS IS CRITICAL!")
+                            print(f"5. Copy the generated URL")
+                            print(f"6. Re-invite the bot to your server (even if already in server)")
+                            print(f"7. Wait 1-2 minutes, then restart Discord")
+                            print(f"\nQuick URL (replace YOUR_BOT_ID with {self.user.id}):")
+                            print(f"https://discord.com/api/oauth2/authorize?client_id={self.user.id}&permissions=8&scope=bot%20applications.commands")
+                            print(f"{'='*60}\n")
+                        else:
+                            print(f"✓ Successfully synced {len(synced)} commands to guild {guild_id_int}")
+                            for cmd in synced[:10]:  # Show first 10
+                                print(f"  - {cmd.name}")
+                            if len(synced) > 10:
+                                print(f"  ... and {len(synced) - 10} more")
+                    except discord.HTTPException as e:
+                        if e.status == 403:
+                            print(f"✗ CRITICAL: Forbidden (403) when syncing to guild {guild_id_int}")
+                            print(f"  The bot invite URL is MISSING 'applications.commands' scope!")
+                            print(f"  SOLUTION: Re-invite the bot with 'applications.commands' scope")
+                        else:
+                            raise
                 except ValueError as e:
                     print(f"✗ Error: Invalid guild ID format '{gid}': {e}")
                     print(f"  Guild IDs must be numeric. Check your config.yml")
@@ -336,8 +363,30 @@ class IslaBot(commands.Bot):
                 loaded_count += 1
                 print(f"✓ Loaded: {ext}")
             except Exception as e:
-                failed_count += 1
-                print(f"✗ Failed to load {ext}: {e}")
+                # Check if it's a CommandAlreadyRegistered error - this is recoverable
+                error_str = str(e)
+                if "CommandAlreadyRegistered" in error_str:
+                    # Try to extract command name and remove it, then retry
+                    import re
+                    match = re.search(r"Command '(\w+)' already registered", error_str)
+                    if match:
+                        cmd_name = match.group(1)
+                        try:
+                            self.tree.remove_command(cmd_name, guild=None)
+                            # Retry loading the extension
+                            await self.load_extension(ext)
+                            loaded_count += 1
+                            print(f"✓ Loaded: {ext} (after removing duplicate '{cmd_name}' command)")
+                            continue
+                        except Exception as retry_error:
+                            failed_count += 1
+                            print(f"✗ Failed to load {ext} even after removing duplicate command: {retry_error}")
+                    else:
+                        failed_count += 1
+                        print(f"✗ Failed to load {ext}: {e}")
+                else:
+                    failed_count += 1
+                    print(f"✗ Failed to load {ext}: {e}")
                 import traceback
                 traceback.print_exc()
                 # Continue loading other extensions

@@ -557,11 +557,20 @@ class OrdersGroup(commands.Cog):
         # Note: /obey, /kneel, /beg, /forgive are standalone commands registered automatically via @app_commands.command decorator
 
 async def setup(bot: commands.Bot):
-    cog = OrdersGroup(bot)
-    # Remove command if it exists before adding cog (to avoid conflicts)
+    # Remove command if it exists before creating cog (to avoid conflicts)
     bot.tree.remove_command("orders", guild=None)
-    await bot.add_cog(cog)
-    # Re-add with override to ensure it's registered correctly
+    cog = OrdersGroup(bot)
+    # Add cog - commands will be auto-registered
+    try:
+        await bot.add_cog(cog)
+    except Exception as e:
+        # If command already registered, remove it and try again
+        if "CommandAlreadyRegistered" in str(e):
+            bot.tree.remove_command("orders", guild=None)
+            await bot.add_cog(cog)
+        else:
+            raise
+    # Ensure command is in tree with override
     try:
         bot.tree.add_command(cog.orders, override=True)
     except Exception:
