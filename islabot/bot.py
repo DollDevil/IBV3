@@ -165,13 +165,48 @@ class IslaBot(commands.Bot):
         # Handle different formats: list, string with commas, or single value
         guild_ids = []
         if isinstance(guild_ids_raw, list):
-            guild_ids = guild_ids_raw
+            # Normalize list items (handle mixed types and nested lists)
+            for item in guild_ids_raw:
+                item_str = str(item).strip()
+                # Check if list item itself is a comma-separated string
+                if ',' in item_str:
+                    # Split and add each ID
+                    guild_ids.extend([gid.strip() for gid in item_str.split(",") if gid.strip()])
+                elif isinstance(item, (list, tuple)):
+                    # Handle nested lists
+                    guild_ids.extend([str(subitem).strip() for subitem in item if subitem])
+                else:
+                    guild_ids.append(item_str)
         elif isinstance(guild_ids_raw, str):
-            # Handle comma-separated string
-            guild_ids = [gid.strip() for gid in guild_ids_raw.split(",") if gid.strip()]
+            # Handle comma-separated string (common issue from environment variables)
+            # Also handle if it's a string representation of a list
+            if guild_ids_raw.strip().startswith('[') and guild_ids_raw.strip().endswith(']'):
+                # Try to parse as JSON-like list
+                import ast
+                try:
+                    parsed = ast.literal_eval(guild_ids_raw)
+                    if isinstance(parsed, list):
+                        guild_ids = [str(item).strip() for item in parsed if item]
+                    else:
+                        guild_ids = [str(parsed).strip()]
+                except:
+                    # Fall back to comma splitting
+                    guild_ids = [gid.strip() for gid in guild_ids_raw.split(",") if gid.strip()]
+            else:
+                # Simple comma-separated string
+                guild_ids = [gid.strip() for gid in guild_ids_raw.split(",") if gid.strip()]
         elif guild_ids_raw:
-            # Single value (not a list)
-            guild_ids = [str(guild_ids_raw)]
+            # Single value (not a list) - convert to list
+            # Check if it's a comma-separated string
+            item_str = str(guild_ids_raw).strip()
+            if ',' in item_str:
+                guild_ids = [gid.strip() for gid in item_str.split(",") if gid.strip()]
+            else:
+                guild_ids = [item_str]
+        
+        # Debug output
+        if guild_ids:
+            print(f"Parsed {len(guild_ids)} guild ID(s) from config")
         
         if guild_ids:
             # Sync commands to each guild directly (guild-specific commands)

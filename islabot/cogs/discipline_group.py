@@ -675,11 +675,12 @@ class DisciplineGroup(commands.Cog):
 
 async def setup(bot: commands.Bot):
     cog = DisciplineGroup(bot)
-    await bot.add_cog(cog)
-    # Remove command if it exists, then add it
+    # Remove command if it exists before adding cog (to avoid conflicts)
     bot.tree.remove_command("discipline", guild=None)
+    await bot.add_cog(cog)
+    # Re-add with override to ensure it's registered correctly
     try:
-        bot.tree.add_command(cog.discipline)
+        bot.tree.add_command(cog.discipline, override=True)
     except Exception:
         pass  # Command already registered - ignore
 

@@ -213,11 +213,12 @@ class CustomEventsGroup(commands.Cog):
 
 async def setup(bot: commands.Bot):
     cog = CustomEventsGroup(bot)
-    await bot.add_cog(cog)
-    # Remove command if it exists, then add it
+    # Remove command if it exists before adding cog (to avoid conflicts)
     bot.tree.remove_command("calendar", guild=None)
+    await bot.add_cog(cog)
+    # Re-add with override to ensure it's registered correctly
     try:
-        bot.tree.add_command(cog.calendar)
+        bot.tree.add_command(cog.calendar, override=True)
     except Exception:
         pass  # Command already registered - ignore
 

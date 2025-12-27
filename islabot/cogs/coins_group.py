@@ -401,10 +401,11 @@ class CoinsGroup(commands.Cog):
 
 async def setup(bot: commands.Bot):
     cog = CoinsGroup(bot)
-    await bot.add_cog(cog)
-    # Remove command if it exists, then add it
+    # Remove command if it exists before adding cog (to avoid conflicts)
     bot.tree.remove_command("coins", guild=None)
+    await bot.add_cog(cog)
+    # Re-add with override to ensure it's registered correctly
     try:
-        bot.tree.add_command(cog.coins)
+        bot.tree.add_command(cog.coins, override=True)
     except Exception:
         pass  # Command already registered - ignore

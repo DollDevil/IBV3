@@ -558,11 +558,12 @@ class OrdersGroup(commands.Cog):
 
 async def setup(bot: commands.Bot):
     cog = OrdersGroup(bot)
-    await bot.add_cog(cog)
-    # Remove command if it exists, then add it
+    # Remove command if it exists before adding cog (to avoid conflicts)
     bot.tree.remove_command("orders", guild=None)
+    await bot.add_cog(cog)
+    # Re-add with override to ensure it's registered correctly
     try:
-        bot.tree.add_command(cog.orders)
+        bot.tree.add_command(cog.orders, override=True)
     except Exception:
         pass  # Command already registered - ignore
 

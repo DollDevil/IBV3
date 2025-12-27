@@ -175,13 +175,14 @@ class AnnounceGroup(commands.Cog):
 
 async def setup(bot: commands.Bot):
     cog = AnnounceGroup(bot)
-    await bot.add_cog(cog)
-    # Remove commands if they exist, then add them
+    # Remove commands if they exist before adding cog (to avoid conflicts)
     bot.tree.remove_command("announce", guild=None)
     bot.tree.remove_command("remind_me", guild=None)
+    await bot.add_cog(cog)
+    # Re-add with override to ensure they're registered correctly
     try:
-        bot.tree.add_command(cog.announce)
-        bot.tree.add_command(cog.remind_me)
+        bot.tree.add_command(cog.announce, override=True)
+        bot.tree.add_command(cog.remind_me, override=True)
     except Exception:
         pass  # Commands already registered - ignore
 
