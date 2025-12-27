@@ -559,8 +559,7 @@ class OrdersGroup(commands.Cog):
 async def setup(bot: commands.Bot):
     cog = OrdersGroup(bot)
     await bot.add_cog(cog)
-    try:
-        bot.tree.add_command(cog.orders)
-    except Exception:
-        pass  # Command already registered
+    # Remove command if it exists, then add it
+    bot.tree.remove_command("orders")
+    bot.tree.add_command(cog.orders)
 

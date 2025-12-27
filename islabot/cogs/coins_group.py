@@ -402,7 +402,6 @@ class CoinsGroup(commands.Cog):
 async def setup(bot: commands.Bot):
     cog = CoinsGroup(bot)
     await bot.add_cog(cog)
-    try:
-        bot.tree.add_command(cog.coins)
-    except Exception:
-        pass  # Command already registered
+    # Remove command if it exists, then add it
+    bot.tree.remove_command("coins")
+    bot.tree.add_command(cog.coins)

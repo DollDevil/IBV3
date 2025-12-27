@@ -176,9 +176,9 @@ class AnnounceGroup(commands.Cog):
 async def setup(bot: commands.Bot):
     cog = AnnounceGroup(bot)
     await bot.add_cog(cog)
-    try:
-        bot.tree.add_command(cog.announce)
-        bot.tree.add_command(cog.remind_me)
-    except Exception:
-        pass  # Commands already registered
+    # Remove commands if they exist, then add them
+    bot.tree.remove_command("announce")
+    bot.tree.remove_command("remind_me")
+    bot.tree.add_command(cog.announce)
+    bot.tree.add_command(cog.remind_me)
 
