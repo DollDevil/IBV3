@@ -676,5 +676,8 @@ class DisciplineGroup(commands.Cog):
 async def setup(bot: commands.Bot):
     cog = DisciplineGroup(bot)
     await bot.add_cog(cog)
-    bot.tree.add_command(cog.discipline)
+    try:
+        bot.tree.add_command(cog.discipline)
+    except Exception:
+        pass  # Command already registered
 
