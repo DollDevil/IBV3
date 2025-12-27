@@ -232,17 +232,41 @@ casino_recap:
         print("=" * 60)
         sys.exit(1)
     
-    try:
-        db = Database(db_path)
-        bot = IslaBot(cfg, db)
-        await bot.start(cfg["token"])
-    except KeyboardInterrupt:
-        print("\nBot shutdown requested by user")
-    except Exception as e:
-        print(f"Fatal error starting bot: {e}")
-        import traceback
-        traceback.print_exc()
-        raise
+    db = Database(db_path)
+    bot = IslaBot(cfg, db)
+    
+    # Retry logic for rate limiting
+    max_retries = 5
+    retry_delay = 5  # Start with 5 seconds
+    for attempt in range(max_retries):
+        try:
+            await bot.start(cfg["token"])
+            break  # Success, exit retry loop
+        except discord.HTTPException as e:
+            if e.status == 429:  # Rate limited
+                if attempt < max_retries - 1:
+                    wait_time = retry_delay * (2 ** attempt)  # Exponential backoff: 5, 10, 20, 40, 80 seconds
+                    print(f"Rate limited (429). Waiting {wait_time} seconds before retry ({attempt + 1}/{max_retries})...")
+                    await asyncio.sleep(wait_time)
+                    continue
+                else:
+                    print(f"ERROR: Rate limited after {max_retries} attempts. Please wait and try again later.")
+                    sys.exit(1)
+            else:
+                # Other HTTP errors - raise immediately
+                raise
+        except discord.LoginFailure as e:
+            print(f"ERROR: Discord Login Failure: {e}")
+            print("Please check your bot token in config.yml or DISCORD_BOT_TOKEN environment variable.")
+            sys.exit(1)
+        except KeyboardInterrupt:
+            print("\nBot shutdown requested by user")
+            break
+        except Exception as e:
+            print(f"Fatal error starting bot: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 if __name__ == "__main__":
     asyncio.run(main())
