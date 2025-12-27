@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import time
 import discord
 from discord.ext import commands
+
+# Add islabot directory to Python path for Railway compatibility
+BOT_DIR = os.path.dirname(os.path.abspath(__file__))
+if BOT_DIR not in sys.path:
+    sys.path.insert(0, BOT_DIR)
 
 from core.config import Config
 from core.db import Database
@@ -13,8 +19,7 @@ from core.channel_cfg import ChannelConfigService
 from core.personality import Personality
 from core.tone import DEFAULT_POOLS
 
-# Get the directory where bot.py is located (for Wispbyte compatibility)
-BOT_DIR = os.path.dirname(os.path.abspath(__file__))
+# BOT_DIR already defined above
 
 COGS = [
     "cogs.alive",
