@@ -134,7 +134,6 @@ class ContextApps(commands.Cog):
     # -------------------------
     # Praise (mods only)
     # -------------------------
-    @app_commands.context_menu(name="Praise")
     async def praise(self, interaction: discord.Interaction, member: discord.Member):
         if not interaction.guild or not isinstance(interaction.user, discord.Member) or not is_mod(interaction.user):
             return await interaction.response.send_message(
@@ -171,7 +170,6 @@ class ContextApps(commands.Cog):
     # -------------------------
     # Humiliate (mods only, consent required)
     # -------------------------
-    @app_commands.context_menu(name="Humiliate")
     async def humiliate(self, interaction: discord.Interaction, member: discord.Member):
         if not interaction.guild or not isinstance(interaction.user, discord.Member) or not is_mod(interaction.user):
             return await interaction.response.send_message(
@@ -217,7 +215,6 @@ class ContextApps(commands.Cog):
     # -------------------------
     # Add Note (mods only)
     # -------------------------
-    @app_commands.context_menu(name="Add Note")
     async def add_note(self, interaction: discord.Interaction, member: discord.Member):
         if not interaction.guild or not isinstance(interaction.user, discord.Member) or not is_mod(interaction.user):
             return await interaction.response.send_message(
@@ -230,7 +227,6 @@ class ContextApps(commands.Cog):
     # -------------------------
     # Coin Tip (any user)
     # -------------------------
-    @app_commands.context_menu(name="Coin Tip")
     async def coin_tip(self, interaction: discord.Interaction, member: discord.Member):
         if not interaction.guild or member.bot or member.id == interaction.user.id:
             return await interaction.response.send_message(
@@ -241,5 +237,20 @@ class ContextApps(commands.Cog):
         await interaction.response.send_modal(CoinTipModal(self.bot, member))
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(ContextApps(bot))
+    cog = ContextApps(bot)
+    await bot.add_cog(cog)
+    
+    # Register context menus manually (can't use decorator inside class)
+    praise_cmd = app_commands.ContextMenu(name="Praise", callback=cog.praise, type=discord.AppCommandType.user)
+    humiliate_cmd = app_commands.ContextMenu(name="Humiliate", callback=cog.humiliate, type=discord.AppCommandType.user)
+    add_note_cmd = app_commands.ContextMenu(name="Add Note", callback=cog.add_note, type=discord.AppCommandType.user)
+    coin_tip_cmd = app_commands.ContextMenu(name="Coin Tip", callback=cog.coin_tip, type=discord.AppCommandType.user)
+    
+    try:
+        bot.tree.add_command(praise_cmd)
+        bot.tree.add_command(humiliate_cmd)
+        bot.tree.add_command(add_note_cmd)
+        bot.tree.add_command(coin_tip_cmd)
+    except Exception:
+        pass  # Commands already registered
 

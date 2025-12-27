@@ -187,5 +187,8 @@ class ConfigGroup(commands.Cog):
 async def setup(bot: commands.Bot):
     cog = ConfigGroup(bot)
     await bot.add_cog(cog)
-    bot.tree.add_command(cog.config)
+    try:
+        bot.tree.add_command(cog.config)
+    except Exception:
+        pass  # Command already registered
 

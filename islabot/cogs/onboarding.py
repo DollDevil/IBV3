@@ -211,7 +211,10 @@ class Onboarding(commands.Cog):
         
         # Staff controls
         self.staff = StaffControls(self)
-        bot.tree.add_command(self.staff)
+        try:
+            bot.tree.add_command(self.staff)
+        except Exception:
+            pass  # Command already registered
 
     def cog_unload(self):
         self.unverified_reminder_loop.cancel()

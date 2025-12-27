@@ -426,5 +426,8 @@ class EventGroup(commands.Cog):
 async def setup(bot: commands.Bot):
     cog = EventGroup(bot)
     await bot.add_cog(cog)
-    bot.tree.add_command(cog.event)
+    try:
+        bot.tree.add_command(cog.event)
+    except Exception:
+        pass  # Command already registered
 
