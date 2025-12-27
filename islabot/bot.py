@@ -135,24 +135,31 @@ async def main():
         token = os.getenv("DISCORD_BOT_TOKEN")
         if token:
             # Create basic config from environment variables
+            # Only token and guilds are required - channels and roles can be configured later via Discord commands
+            guild_id = os.getenv("DISCORD_GUILDS", "")
+            if not guild_id:
+                guild_id = "123456789012345678"  # placeholder, will need to be set
+            
             config_content = f"""token: "{token}"
 
 guilds:
-  - {os.getenv("DISCORD_GUILDS", "123456789012345678")}
+  - {guild_id}
 
+# Channels and roles can be configured later via /config commands or Discord settings
+# These are optional - the bot will work with defaults (0 means not configured)
 channels:
-  spotlight: {os.getenv("CHANNEL_SPOTLIGHT", "123")}
-  orders: {os.getenv("CHANNEL_ORDERS", "456")}
-  casino: {os.getenv("CHANNEL_CASINO", "789")}
-  spam: {os.getenv("CHANNEL_SPAM", "111")}
-  mod_logs: {os.getenv("CHANNEL_MOD_LOGS", "222")}
-  announcements: {os.getenv("CHANNEL_ANNOUNCEMENTS", "111111111111111111")}
-  logs: {os.getenv("CHANNEL_LOGS", "333333333333333333")}
+  spotlight: 0
+  orders: 0
+  casino: 0
+  spam: 0
+  mod_logs: 0
+  announcements: 0
+  logs: 0
 
 roles:
-  verified_18: {os.getenv("ROLE_VERIFIED_18", "555555555555555555")}
-  consent: {os.getenv("ROLE_CONSENT", "666666666666666666")}
-  humiliation_optin: {os.getenv("ROLE_HUMILIATION_OPTIN", "777777777777777777")}
+  verified_18: 0
+  consent: 0
+  humiliation_optin: 0
 
 isla:
   timezone: "Europe/London"
