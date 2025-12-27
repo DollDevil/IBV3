@@ -110,7 +110,37 @@ async def main():
     config_path = os.path.join(BOT_DIR, "config.yml")
     db_path = os.path.join(BOT_DIR, "islabot.sqlite3")
     
+    # Check if config.yml exists
+    if not os.path.exists(config_path):
+        print("=" * 60)
+        print("ERROR: config.yml file not found!")
+        print("=" * 60)
+        print(f"Expected location: {config_path}")
+        print("\nTo fix this:")
+        print("1. Create config.yml in the islabot/ directory")
+        print("2. Add your bot token and configuration")
+        print("3. On Railway: Use the file editor or upload via Variables")
+        print("\nExample config.yml structure:")
+        print("  token: \"YOUR_BOT_TOKEN_HERE\"")
+        print("  guilds:")
+        print("    - YOUR_GUILD_ID")
+        print("  channels:")
+        print("    spotlight: CHANNEL_ID")
+        print("    # ... other settings")
+        print("=" * 60)
+        sys.exit(1)
+    
     cfg = Config.load(config_path)
+    
+    # Check if token is set
+    if not cfg.get("token") or cfg.get("token") == "PUT_YOUR_BOT_TOKEN_HERE":
+        print("=" * 60)
+        print("ERROR: Bot token not configured!")
+        print("=" * 60)
+        print("Please set your bot token in config.yml")
+        print("=" * 60)
+        sys.exit(1)
+    
     db = Database(db_path)
     bot = IslaBot(cfg, db)
     await bot.start(cfg["token"])
