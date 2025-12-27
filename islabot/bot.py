@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import discord
 from discord.ext import commands
 
 from core.config import Config
 from core.db import Database
+from core.flags import FlagService
+from core.channel_cfg import ChannelConfigService
+from core.personality import Personality
+from core.tone import DEFAULT_POOLS
+
+# Get the directory where bot.py is located (for Wispbyte compatibility)
+BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 COGS = [
     "cogs.alive",
@@ -64,7 +72,8 @@ class IslaBot(commands.Bot):
         self.started_ts = int(time.time())
         
         # Hot-reload personality responses
-        self.personality = Personality(path="personality.json", fallback=DEFAULT_POOLS)
+        personality_path = os.path.join(BOT_DIR, "personality.json")
+        self.personality = Personality(path=personality_path, fallback=DEFAULT_POOLS)
         self.personality.load()
         self.personality.sanitize()
 
@@ -90,8 +99,12 @@ class IslaBot(commands.Bot):
         await self.db.close()
 
 async def main():
-    cfg = Config.load("config.yml")
-    db = Database("islabot.sqlite3")
+    # Use paths relative to bot.py location (Wispbyte compatible)
+    config_path = os.path.join(BOT_DIR, "config.yml")
+    db_path = os.path.join(BOT_DIR, "islabot.sqlite3")
+    
+    cfg = Config.load(config_path)
+    db = Database(db_path)
     bot = IslaBot(cfg, db)
     await bot.start(cfg["token"])
 
