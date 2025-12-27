@@ -22,6 +22,7 @@ from core.flags import FlagService
 from core.channel_cfg import ChannelConfigService
 from core.personality import Personality
 from core.tone import DEFAULT_POOLS
+from discord import app_commands
 
 COGS = [
     f"{COG_PREFIX}cogs.alive",
@@ -83,38 +84,216 @@ class IslaBot(commands.Bot):
         self.personality = Personality(path=personality_path, fallback=DEFAULT_POOLS)
         self.personality.load()
         self.personality.sanitize()
+        
+        # Track if commands have been synced
+        self._commands_synced = False
 
-    async def setup_hook(self):
-        try:
-            await self.db.connect()
-            await self.db.migrate()
-        except Exception as e:
-            print(f"Database error during setup: {e}")
+    async def on_ready(self):
+        """Called when the bot is ready. Register and sync commands."""
+        print(f"\n{'='*60}")
+        print(f"Bot is ready! Logged in as {self.user} (ID: {self.user.id})")
+        print(f"Connected to {len(self.guilds)} guild(s)")
+        print(f"{'='*60}\n")
+        
+        if not self._commands_synced:
+            print("Registering and syncing commands...")
+            # In discord.py 2.0+, @app_commands.command() in cogs ARE automatically added to the tree
+            # But we'll verify and manually register any that might be missing
+            await self._register_cog_commands()
+            await self._sync_commands()
+    
+    async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        """Global error handler for app commands."""
+        if isinstance(error, app_commands.CommandOnCooldown):
+            await interaction.response.send_message(
+                f"This command is on cooldown. Try again in {error.retry_after:.1f} seconds.",
+                ephemeral=True
+            )
+        elif isinstance(error, app_commands.MissingPermissions):
+            await interaction.response.send_message(
+                "You don't have permission to use this command.",
+                ephemeral=True
+            )
+        elif isinstance(error, app_commands.BotMissingPermissions):
+            await interaction.response.send_message(
+                "I don't have the required permissions to execute this command.",
+                ephemeral=True
+            )
+        else:
+            # Log unexpected errors
+            print(f"Unhandled command error: {error}")
             import traceback
             traceback.print_exc()
-            raise
-
-        for ext in COGS:
             try:
-                await self.load_extension(ext)
-            except Exception as e:
-                print(f"Warning: Failed to load extension {ext}: {e}")
-                # Continue loading other extensions
-
-        # Sync slash commands (per guild for fast iteration)
+                if interaction.response.is_done():
+                    await interaction.followup.send(
+                        "An error occurred while executing this command.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message(
+                        "An error occurred while executing this command.",
+                        ephemeral=True
+                    )
+            except Exception:
+                pass  # Ignore errors in error handler
+    
+    async def on_error(self, event_method: str, *args, **kwargs):
+        """Global error handler for events."""
+        print(f"Error in event {event_method}:")
+        import traceback
+        traceback.print_exc()
+    
+    async def _sync_commands(self):
+        """Helper method to sync commands."""
+        # List all commands in the tree before syncing
+        all_commands = []
+        for cmd in self.tree.walk_commands():
+            all_commands.append(cmd.qualified_name)
+        print(f"\n{'='*60}")
+        print(f"Commands in tree before sync: {len(all_commands)}")
+        if all_commands:
+            print(f"  Commands: {', '.join(all_commands[:20])}")
+            if len(all_commands) > 20:
+                print(f"  ... and {len(all_commands) - 20} more")
+        else:
+            print("  WARNING: No commands found in tree! This is likely the problem.")
+        print(f"{'='*60}\n")
+        
         guild_ids = self.cfg.get("guilds", default=[])
         if guild_ids:
             for gid in guild_ids:
                 try:
                     g = discord.Object(id=int(gid))
                     self.tree.copy_global_to(guild=g)
-                    await self.tree.sync(guild=g)
+                    synced = await self.tree.sync(guild=g)
+                    print(f"✓ Synced {len(synced)} commands to guild {gid}")
+                    for cmd in synced:
+                        print(f"  - {cmd.name}")
                 except discord.Forbidden:
-                    print(f"Warning: Missing access to guild {gid}. Skipping command sync for this guild.")
+                    print(f"✗ Warning: Missing access to guild {gid}. Skipping command sync for this guild.")
                 except Exception as e:
-                    print(f"Warning: Failed to sync commands for guild {gid}: {e}")
+                    print(f"✗ Warning: Failed to sync commands for guild {gid}: {e}")
+                    import traceback
+                    traceback.print_exc()
         else:
-            await self.tree.sync()
+            synced = await self.tree.sync()
+            print(f"✓ Synced {len(synced)} global commands")
+            for cmd in synced:
+                print(f"  - {cmd.name}")
+        self._commands_synced = True
+
+    async def setup_hook(self):
+        """Called when the bot is setting up. Initialize database and load cogs."""
+        print(f"\n{'='*60}")
+        print("Initializing IslaBot...")
+        print(f"{'='*60}\n")
+        
+        # Initialize database
+        try:
+            await self.db.connect()
+            print("✓ Database connected")
+            await self.db.migrate()
+            print("✓ Database migrations completed")
+        except Exception as e:
+            print(f"✗ Database error during setup: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+        # Load all cogs
+        loaded_count = 0
+        failed_count = 0
+        for ext in COGS:
+            try:
+                await self.load_extension(ext)
+                loaded_count += 1
+                print(f"✓ Loaded: {ext}")
+            except Exception as e:
+                failed_count += 1
+                print(f"✗ Failed to load {ext}: {e}")
+                import traceback
+                traceback.print_exc()
+                # Continue loading other extensions
+        
+        print(f"\n{'='*60}")
+        print(f"Extensions: {loaded_count} loaded, {failed_count} failed")
+        print("Waiting for bot to be ready...")
+        print(f"{'='*60}\n")
+    
+    async def _register_cog_commands(self):
+        """Register all app_commands from loaded cogs to the command tree.
+        
+        Note: In discord.py 2.0+, commands defined with @app_commands.command() 
+        in cogs ARE automatically added to the tree when bot.add_cog() is called.
+        This function verifies and manually registers any that might be missing.
+        """
+        registered_count = 0
+        skipped_count = 0
+        
+        # First, check what's already in the tree
+        existing_commands = {cmd.qualified_name for cmd in self.tree.walk_commands()}
+        
+        for cog_name, cog in self.cogs.items():
+            # Get all attributes of the cog
+            for attr_name in dir(cog):
+                # Skip private attributes and methods
+                if attr_name.startswith('_'):
+                    continue
+                
+                try:
+                    attr = getattr(cog, attr_name, None)
+                    
+                    # Check if it's an app_commands.Command or app_commands.Group
+                    if isinstance(attr, (app_commands.Command, app_commands.Group)):
+                        # Check if command is already in tree
+                        if attr.qualified_name in existing_commands:
+                            skipped_count += 1
+                            continue
+                            
+                        # Command not in tree, add it
+                        try:
+                            self.tree.add_command(attr)
+                            registered_count += 1
+                            print(f"  ✓ Registered: {attr.qualified_name}")
+                            existing_commands.add(attr.qualified_name)
+                        except Exception as e:
+                            print(f"  ✗ Failed to register {attr.qualified_name}: {e}")
+                            
+                except Exception as e:
+                    # Silently skip errors when checking attributes
+                    pass
+        
+        if registered_count > 0:
+            print(f"✓ Registered {registered_count} new commands from cogs")
+        if skipped_count > 0:
+            print(f"  ({skipped_count} commands were already in the tree)")
+        
+        # Verify data collection listeners are active
+        listeners_active = []
+        if self.get_cog("Moderation"):
+            listeners_active.append("message tracking")
+        if self.get_cog("VoiceTracker"):
+            listeners_active.append("voice tracking")
+        if self.get_cog("MessageTracker"):
+            listeners_active.append("message hourly tracking")
+        if self.get_cog("Leaderboard"):
+            listeners_active.append("spotlight tracking")
+        if self.get_cog("EventActivityTracker"):
+            listeners_active.append("event activity tracking")
+        
+        if listeners_active:
+            print(f"✓ Data collection active: {', '.join(listeners_active)}")
+        else:
+            print("⚠ Warning: Some data collection listeners may not be active")
+        
+        # Verify database is accessible
+        try:
+            test_result = await self.db.fetchone("SELECT 1 as test")
+            if test_result:
+                print("✓ Database connection verified")
+        except Exception as e:
+            print(f"⚠ Warning: Database health check failed: {e}")
 
     async def close(self):
         await super().close()
