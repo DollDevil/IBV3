@@ -36,13 +36,19 @@ class Database:
     async def _ensure_column(self, table: str, col: str, ddl: str):
         """Add column if missing (SQLite)."""
         assert self.conn
-        rows = await self.fetchall(f"PRAGMA table_info({table});")
-        existing = {r["name"] for r in rows}
-        if col not in existing:
-            await self.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl};")
+        try:
+            rows = await self.fetchall(f"PRAGMA table_info({table});")
+            existing = {r["name"] for r in rows}
+            if col not in existing:
+                await self.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl};")
+        except Exception as e:
+            # Table might not exist yet, that's okay
+            print(f"Warning: Could not check/add column {col} to {table}: {e}")
 
     async def migrate(self):
-        await self.execute("""
+        """Run database migrations. Handles errors gracefully."""
+        try:
+            await self.execute("""
         CREATE TABLE IF NOT EXISTS users (
           guild_id INTEGER NOT NULL,
           user_id  INTEGER NOT NULL,
@@ -1206,6 +1212,12 @@ class Database:
           PRIMARY KEY (guild_id, user_id)
         );
         """)
+        except Exception as e:
+            print(f"Database migration error: {e}")
+            print(f"Error type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     async def ensure_user(self, gid: int, uid: int):
         await self.execute("INSERT OR IGNORE INTO users(guild_id,user_id) VALUES(?,?)", (gid, uid))
