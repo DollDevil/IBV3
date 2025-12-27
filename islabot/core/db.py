@@ -518,9 +518,12 @@ class Database:
         );
         """)
 
+        # Note: events table uses is_active, not status. events_legacy has status.
+        # Index on events_legacy for status (if needed)
         await self.execute("""
-        CREATE INDEX IF NOT EXISTS idx_events_guild_status ON events(guild_id, status);
-        CREATE INDEX IF NOT EXISTS idx_events_guild_type ON events(guild_id, type);
+        CREATE INDEX IF NOT EXISTS idx_events_legacy_guild_status ON events_legacy(guild_id, status);
+        CREATE INDEX IF NOT EXISTS idx_events_guild_type ON events(guild_id, event_type);
+        CREATE INDEX IF NOT EXISTS idx_events_guild_active ON events(guild_id, is_active);
         """)
 
         await self.execute("""
