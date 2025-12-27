@@ -209,28 +209,52 @@ class IslaBot(commands.Bot):
             print(f"Parsed {len(guild_ids)} guild ID(s) from config")
         
         if guild_ids:
+            # Verify bot can see the guilds before syncing
+            bot_guild_ids = {g.id for g in self.guilds}
+            print(f"Bot is in {len(bot_guild_ids)} guild(s): {', '.join(str(gid) for gid in list(bot_guild_ids)[:5])}")
+            if len(bot_guild_ids) > 5:
+                print(f"  ... and {len(bot_guild_ids) - 5} more")
+            
             # Sync commands to each guild directly (guild-specific commands)
             for gid in guild_ids:
                 try:
                     # Convert to int, handling string IDs
                     guild_id_int = int(str(gid).strip())
+                    
+                    # Verify bot is actually in this guild
+                    if guild_id_int not in bot_guild_ids:
+                        print(f"⚠ Warning: Bot is not in guild {guild_id_int}")
+                        print(f"  The bot must be invited to the server before commands can sync.")
+                        print(f"  Check that the bot is actually in the server.")
+                        continue
+                    
                     g = discord.Object(id=guild_id_int)
                     # Sync directly to guild (don't use copy_global_to - that's for copying global commands)
+                    print(f"Syncing commands to guild {guild_id_int}...")
                     synced = await self.tree.sync(guild=g)
-                    print(f"✓ Synced {len(synced)} commands to guild {guild_id_int}")
+                    print(f"✓ Successfully synced {len(synced)} commands to guild {guild_id_int}")
                     if synced:
                         for cmd in synced[:10]:  # Show first 10
                             print(f"  - {cmd.name}")
                         if len(synced) > 10:
                             print(f"  ... and {len(synced) - 10} more")
+                    else:
+                        print(f"  ⚠ No commands were synced (this might indicate a problem)")
                 except ValueError as e:
-                    print(f"✗ Warning: Invalid guild ID format '{gid}': {e}")
+                    print(f"✗ Error: Invalid guild ID format '{gid}': {e}")
                     print(f"  Guild IDs must be numeric. Check your config.yml")
                 except discord.Forbidden:
-                    print(f"✗ Warning: Missing access to guild {gid}. Skipping command sync for this guild.")
-                    print(f"  Make sure the bot has 'applications.commands' scope in the invite URL!")
+                    print(f"✗ Error: Missing permissions for guild {gid}")
+                    print(f"  The bot needs 'applications.commands' scope in the invite URL!")
+                    print(f"  Current invite URL likely missing: ?scope=bot%20applications.commands")
+                except discord.HTTPException as e:
+                    print(f"✗ Error: Discord API error syncing to guild {gid}: {e}")
+                    if e.status == 403:
+                        print(f"  This usually means the invite URL is missing 'applications.commands' scope")
+                    elif e.status == 404:
+                        print(f"  Bot is not in this guild or guild doesn't exist")
                 except Exception as e:
-                    print(f"✗ Warning: Failed to sync commands for guild {gid}: {e}")
+                    print(f"✗ Error: Failed to sync commands for guild {gid}: {e}")
                     import traceback
                     traceback.print_exc()
         else:
@@ -244,11 +268,44 @@ class IslaBot(commands.Bot):
                     print(f"  ... and {len(synced) - 10} more")
         
         print(f"\n{'='*60}")
-        print("IMPORTANT: If commands don't appear in Discord:")
-        print("1. Make sure your bot invite URL includes 'applications.commands' scope")
-        print("2. Wait 1-2 minutes for Discord to update")
-        print("3. Try restarting Discord client (Ctrl+R)")
-        print(f"{'='*60}\n")
+        print("SYNC VERIFICATION:")
+        print(f"{'='*60}")
+        
+        # Verify bot connection
+        if self.user:
+            print(f"✓ Bot is logged in as: {self.user.name}#{self.user.discriminator}")
+            print(f"✓ Bot ID: {self.user.id}")
+        else:
+            print("✗ Bot user not found - connection issue!")
+        
+        # Verify guilds
+        if self.guilds:
+            print(f"✓ Bot is in {len(self.guilds)} guild(s)")
+            for guild in list(self.guilds)[:3]:
+                print(f"  - {guild.name} (ID: {guild.id})")
+            if len(self.guilds) > 3:
+                print(f"  ... and {len(self.guilds) - 3} more")
+        else:
+            print("✗ Bot is not in any guilds!")
+            print("  Invite the bot to your server first.")
+        
+        # Check commands
+        total_commands = len(list(self.tree.walk_commands()))
+        print(f"✓ Total commands registered: {total_commands}")
+        
+        if total_commands == 0:
+            print("  ⚠ WARNING: No commands found! This is a code issue.")
+        elif guild_ids and total_commands > 0:
+            print(f"\n{'='*60}")
+            print("IF COMMANDS DON'T APPEAR IN DISCORD:")
+            print(f"{'='*60}")
+            print("1. CHECK INVITE URL - Must include 'applications.commands' scope")
+            print("   Correct format: https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_ID&permissions=8&scope=bot%20applications.commands")
+            print("2. RE-INVITE the bot with the correct URL (even if already in server)")
+            print("3. WAIT 1-2 minutes for Discord to propagate commands")
+            print("4. RESTART Discord client (Ctrl+R or Cmd+R)")
+            print("5. CHECK Railway logs above for sync errors")
+            print(f"{'='*60}\n")
         
         self._commands_synced = True
 
