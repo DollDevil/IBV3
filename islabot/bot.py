@@ -160,27 +160,61 @@ class IslaBot(commands.Bot):
             print("  WARNING: No commands found in tree! This is likely the problem.")
         print(f"{'='*60}\n")
         
-        guild_ids = self.cfg.get("guilds", default=[])
+        guild_ids_raw = self.cfg.get("guilds", default=[])
+        
+        # Handle different formats: list, string with commas, or single value
+        guild_ids = []
+        if isinstance(guild_ids_raw, list):
+            guild_ids = guild_ids_raw
+        elif isinstance(guild_ids_raw, str):
+            # Handle comma-separated string
+            guild_ids = [gid.strip() for gid in guild_ids_raw.split(",") if gid.strip()]
+        elif guild_ids_raw:
+            # Single value (not a list)
+            guild_ids = [str(guild_ids_raw)]
+        
         if guild_ids:
+            # Sync commands to each guild directly (guild-specific commands)
             for gid in guild_ids:
                 try:
-                    g = discord.Object(id=int(gid))
-                    self.tree.copy_global_to(guild=g)
+                    # Convert to int, handling string IDs
+                    guild_id_int = int(str(gid).strip())
+                    g = discord.Object(id=guild_id_int)
+                    # Sync directly to guild (don't use copy_global_to - that's for copying global commands)
                     synced = await self.tree.sync(guild=g)
-                    print(f"✓ Synced {len(synced)} commands to guild {gid}")
-                    for cmd in synced:
-                        print(f"  - {cmd.name}")
+                    print(f"✓ Synced {len(synced)} commands to guild {guild_id_int}")
+                    if synced:
+                        for cmd in synced[:10]:  # Show first 10
+                            print(f"  - {cmd.name}")
+                        if len(synced) > 10:
+                            print(f"  ... and {len(synced) - 10} more")
+                except ValueError as e:
+                    print(f"✗ Warning: Invalid guild ID format '{gid}': {e}")
+                    print(f"  Guild IDs must be numeric. Check your config.yml")
                 except discord.Forbidden:
                     print(f"✗ Warning: Missing access to guild {gid}. Skipping command sync for this guild.")
+                    print(f"  Make sure the bot has 'applications.commands' scope in the invite URL!")
                 except Exception as e:
                     print(f"✗ Warning: Failed to sync commands for guild {gid}: {e}")
                     import traceback
                     traceback.print_exc()
         else:
+            # No guild IDs specified, sync globally
             synced = await self.tree.sync()
             print(f"✓ Synced {len(synced)} global commands")
-            for cmd in synced:
-                print(f"  - {cmd.name}")
+            if synced:
+                for cmd in synced[:10]:  # Show first 10
+                    print(f"  - {cmd.name}")
+                if len(synced) > 10:
+                    print(f"  ... and {len(synced) - 10} more")
+        
+        print(f"\n{'='*60}")
+        print("IMPORTANT: If commands don't appear in Discord:")
+        print("1. Make sure your bot invite URL includes 'applications.commands' scope")
+        print("2. Wait 1-2 minutes for Discord to update")
+        print("3. Try restarting Discord client (Ctrl+R)")
+        print(f"{'='*60}\n")
+        
         self._commands_synced = True
 
     async def setup_hook(self):
@@ -228,12 +262,17 @@ class IslaBot(commands.Bot):
         in cogs ARE automatically added to the tree when bot.add_cog() is called.
         This function verifies and manually registers any that might be missing.
         """
+        print("Checking command registration...")
+        
+        # First, check what's already in the tree (from auto-registration)
+        existing_commands = {cmd.qualified_name for cmd in self.tree.walk_commands()}
+        print(f"  Commands already in tree (auto-registered): {len(existing_commands)}")
+        
         registered_count = 0
         skipped_count = 0
+        found_commands = []
         
-        # First, check what's already in the tree
-        existing_commands = {cmd.qualified_name for cmd in self.tree.walk_commands()}
-        
+        # Scan all cogs for app_commands
         for cog_name, cog in self.cogs.items():
             # Get all attributes of the cog
             for attr_name in dir(cog):
@@ -246,28 +285,44 @@ class IslaBot(commands.Bot):
                     
                     # Check if it's an app_commands.Command or app_commands.Group
                     if isinstance(attr, (app_commands.Command, app_commands.Group)):
+                        found_commands.append(attr.qualified_name)
+                        
                         # Check if command is already in tree
                         if attr.qualified_name in existing_commands:
                             skipped_count += 1
                             continue
                             
-                        # Command not in tree, add it
+                        # Command not in tree, add it manually
                         try:
                             self.tree.add_command(attr)
                             registered_count += 1
-                            print(f"  ✓ Registered: {attr.qualified_name}")
+                            print(f"  ✓ Manually registered: {attr.qualified_name}")
                             existing_commands.add(attr.qualified_name)
                         except Exception as e:
                             print(f"  ✗ Failed to register {attr.qualified_name}: {e}")
                             
-                except Exception as e:
+                except Exception:
                     # Silently skip errors when checking attributes
                     pass
         
-        if registered_count > 0:
-            print(f"✓ Registered {registered_count} new commands from cogs")
-        if skipped_count > 0:
-            print(f"  ({skipped_count} commands were already in the tree)")
+        print(f"\nCommand Registration Summary:")
+        print(f"  - Found in cogs: {len(found_commands)}")
+        print(f"  - Already in tree: {skipped_count}")
+        print(f"  - Manually registered: {registered_count}")
+        print(f"  - Total in tree now: {len(existing_commands)}")
+        
+        if len(existing_commands) == 0:
+            print(f"\n{'='*60}")
+            print("⚠ CRITICAL WARNING: NO COMMANDS FOUND IN TREE!")
+            print("This means commands aren't being registered properly.")
+            print("Check:")
+            print("  1. Are cogs loading without errors?")
+            print("  2. Do cogs have @app_commands.command() decorators?")
+            print("  3. Are setup() functions calling bot.add_cog()?")
+            print(f"{'='*60}\n")
+        elif len(found_commands) > len(existing_commands):
+            print(f"\n⚠ Warning: Found {len(found_commands)} commands in cogs but only {len(existing_commands)} in tree")
+            print("Some commands may not be registered properly.\n")
         
         # Verify data collection listeners are active
         listeners_active = []
