@@ -212,8 +212,11 @@ class Onboarding(commands.Cog):
         # Staff controls
         self.staff = StaffControls(self)
         # Remove command if it exists, then add it
-        bot.tree.remove_command("staff")
-        bot.tree.add_command(self.staff)
+        bot.tree.remove_command("staff", guild=None)
+        try:
+            bot.tree.add_command(self.staff)
+        except Exception:
+            pass  # Command already registered - ignore
 
     def cog_unload(self):
         self.unverified_reminder_loop.cancel()

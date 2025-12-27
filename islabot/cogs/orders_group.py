@@ -560,6 +560,9 @@ async def setup(bot: commands.Bot):
     cog = OrdersGroup(bot)
     await bot.add_cog(cog)
     # Remove command if it exists, then add it
-    bot.tree.remove_command("orders")
-    bot.tree.add_command(cog.orders)
+    bot.tree.remove_command("orders", guild=None)
+    try:
+        bot.tree.add_command(cog.orders)
+    except Exception:
+        pass  # Command already registered - ignore
 
