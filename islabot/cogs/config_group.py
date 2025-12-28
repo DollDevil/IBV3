@@ -141,11 +141,54 @@ class ModerationModal(discord.ui.Modal, title="Config: Moderation"):
         embed = create_embed("Saved.\n᲼᲼", title="Config Moderation", color="success", is_dm=False, is_system=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
+# ---------- Onboarding Subgroup ----------
+class OnboardingConfigGroup(app_commands.Group):
+    def __init__(self, bot: commands.Bot):
+        super().__init__(name="onboarding", description="Onboarding configuration")
+        self.bot = bot
+
+    @app_commands.command(name="channel", description="Set onboarding channel.")
+    @app_commands.describe(channel="The channel for onboarding messages")
+    async def channel(self, interaction: discord.Interaction, channel: discord.TextChannel):
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        if not is_admin(interaction.user):
+            embed = create_embed("Not for you.\n᲼᲼", title="Config", color="error", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        gid = interaction.guild.id
+        await cfg_set(self.bot.db, gid, "onboarding.channel", str(channel.id))
+        embed = create_embed(f"Onboarding channel set to {channel.mention}.\n᲼᲼", title="Config Onboarding", color="success", is_dm=False, is_system=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="role", description="Set onboarding role.")
+    @app_commands.describe(role_type="Role type", role="The role to set")
+    @app_commands.choices(role_type=[
+        app_commands.Choice(name="Unverified", value="unverified"),
+        app_commands.Choice(name="Verified", value="verified"),
+        app_commands.Choice(name="Bad Pup", value="bad_pup"),
+    ])
+    async def role(self, interaction: discord.Interaction, role_type: app_commands.Choice[str], role: discord.Role):
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        if not is_admin(interaction.user):
+            embed = create_embed("Not for you.\n᲼᲼", title="Config", color="error", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        gid = interaction.guild.id
+        await cfg_set(self.bot.db, gid, f"onboarding.role_{role_type.value}", str(role.id))
+        embed = create_embed(f"{role_type.name} role set to {role.mention}.\n᲼᲼", title="Config Onboarding", color="success", is_dm=False, is_system=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
 # ---------- Cog ----------
 class ConfigGroup(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.config = app_commands.Group(name="config", description="Server setup")
+        self.onboarding_config = OnboardingConfigGroup(bot)
+        self.config.add_command(self.onboarding_config)
         self._register()
 
     async def _require_admin(self, interaction: discord.Interaction) -> bool:

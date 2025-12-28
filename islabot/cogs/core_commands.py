@@ -203,28 +203,6 @@ class CoreCommands(commands.Cog):
         )
         await interaction.followup.send(embed=e, ephemeral=True)
 
-    # -------------------------
-    # /rules
-    # -------------------------
-    @app_commands.command(name="rules", description="View the server rules.")
-    async def rules(self, interaction: discord.Interaction):
-        embed = discord.Embed(description="Please read the rules.\n᲼᲼",
-                              colour=0x65566c)
-
-        embed.set_author(name="𝚂𝚢𝚜𝚝𝚎𝚖 𝙼𝚎𝚜𝚜𝚊𝚐𝚎",
-                         icon_url="https://i.imgur.com/irmCXhw.gif")
-
-        embed.add_field(name="<a:redbook:1454436043339333735> Rules",
-                        value="> - 1. **Respect the Pperator.**\n> ᲼᲼\n> ᲼᲼\n> - 2. **Stay On-Topic.**\n> ᲼᲼\n> ᲼᲼\n> - 3. **No Spam or Flooding.**\n> ᲼᲼\n> ᲼᲼\n> - 4. **No Spoilers.**\n> ᲼᲼\n> ᲼᲼\n> - 5. <:dmsoff:1454433182890987602> **Do Not DM Isla.**\n> ᲼᲼",
-                        inline=True)
-        embed.add_field(name="᲼᲼",
-                        value="-# > *Harassment, hate speech or disrespect will be terminated on sight.*\n-# > ᲼᲼\n-# > *By using the right channels we keep the system clean.*\n-# > ᲼᲼\n-# > *This includes mass pings, ads, or self-promotion.*\n-# > ᲼᲼\n-# > *Do not spoil Isla's programs — allows everyone to experience them themselves.*\n-# > ᲼᲼\n-# > *To DM Isla each member must pay a fee beforehand.*\n-# > ᲼᲼",
-                        inline=True)
-
-        embed.set_footer(text="Having issues? Type /support",
-                         icon_url="https://i.imgur.com/irmCXhw.gif")
-
-        await interaction.response.send_message(embed=embed)
 
     # -------------------------
     # /status (PUBLIC-SAFE)
