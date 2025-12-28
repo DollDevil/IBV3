@@ -822,7 +822,7 @@ class Orders(commands.Cog):
             announce_key="order_announce"
         )
         embed = create_embed(f"Personal order created: `{order_id}`", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     # ------------------ scheduler: reminders + expirations ------------------
     @tasks.loop(seconds=60)

@@ -1010,7 +1010,7 @@ class EventSystem(commands.Cog):
             await orders_ch.send(embed=e)
 
         embed = create_embed(f"Holiday week **{config['name']}** started.", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="event_start_season", description="(Staff) Start a seasonal event (spring/summer/autumn/winter).")
     @app_commands.checks.has_permissions(manage_guild=True)

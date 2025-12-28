@@ -47,7 +47,7 @@ class Privacy(commands.Cog):
         await self.bot.db.audit(gid, uid, uid, "optin", "{}", now_ts())
 
         embed = create_embed("Opt-in complete. You're back in the system.", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Privacy(bot))

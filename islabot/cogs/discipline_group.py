@@ -379,7 +379,7 @@ class DisciplineGroup(commands.Cog):
         # Apply timeout
         try:
             from datetime import timedelta
-from utils.embed_utils import create_embed
+            from utils.embed_utils import create_embed
             until = discord.utils.utcnow() + timedelta(seconds=seconds)
             await user.timeout(until, reason=reason or "discipline timeout")
         except Exception:

@@ -130,7 +130,7 @@ class DuelCog(commands.Cog):
 
         # Public challenge message in the channel (no @everyone)
         view = DuelAcceptView(self.bot, interaction.user.id, user.id, amount)
-        embed = isla_embed(
+        challenge_embed = isla_embed(
             f"{user.mention}\n\n"
             f"{interaction.user.mention} wants a duel.\n"
             f"Stake: **{fmt(amount)} Coins** each.\n"
@@ -138,8 +138,8 @@ class DuelCog(commands.Cog):
             title="Duel Request"
         )
         embed = create_embed("Posted.\n᲼᲼", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
-        await interaction.channel.send(content=f"{user.mention}", embed=embed, view=view)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.channel.send(content=f"{user.mention}", embed=challenge_embed, view=view)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(DuelCog(bot))

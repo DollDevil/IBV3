@@ -52,7 +52,7 @@ class AdminTools(commands.Cog):
         await self.bot.flags.set_guild(gid, feature, enabled)
         await self.bot.db.audit(gid, interaction.user.id, None, "toggle_feature_guild", json.dumps({"feature": feature, "enabled": enabled}), now_ts())
         embed = create_embed(f"Guild feature `{feature}` set to {enabled}.", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="feature_set_channel", description="(Admin) Enable/disable a feature in a channel.")
     @app_commands.describe(feature="Feature name", channel="Channel to configure", enabled="Enable or disable")

@@ -118,7 +118,7 @@ class CoinsGroup(commands.Cog):
 
         from datetime import datetime, timedelta
         from zoneinfo import ZoneInfo
-from utils.embed_utils import create_embed
+        from utils.embed_utils import create_embed
         UK = ZoneInfo("Europe/London")
         dt_today = datetime.fromisoformat(today).replace(tzinfo=UK).date()
         try:

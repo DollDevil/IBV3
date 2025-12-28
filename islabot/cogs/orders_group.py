@@ -505,7 +505,7 @@ class OrdersGroup(commands.Cog):
             used_token = True
         else:
             from utils.economy import get_wallet
-from utils.embed_utils import create_embed
+            from utils.embed_utils import create_embed
             await ensure_wallet(self.bot.db, gid, uid)
             w = await get_wallet(self.bot.db, gid, uid)
             if w.coins < cost:
