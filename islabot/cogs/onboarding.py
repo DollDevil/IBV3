@@ -1,218 +1,24 @@
 from __future__ import annotations
 import secrets
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from discord import app_commands
 
-from core.utils import now_local
-from core.isla_text import sanitize_isla_text
 from utils.helpers import now_ts, format_time_left, isla_embed as helper_isla_embed, ensure_user_row
 from utils.embed_utils import create_embed
-
-REMINDER_AFTER_SECONDS = 48 * 3600  # 48 hours
-REMINDER_COOLDOWN_SECONDS = 24 * 3600  # 24 hours (don't nag more than once/day)
 
 VACATION_MIN_DAYS = 3
 VACATION_MAX_DAYS = 21
 VACATION_COOLDOWN_SECONDS = 24 * 3600  # 24 hours static cooldown
 TAX_LOCK_HOURS = 24
 
-STYLE1_DEFAULT = "https://i.imgur.com/5nsuuCV.png"
-
-# -------- Embed constants --------
-WELCOME_UNVERIFIED = {
-    "title": "Welcome to Isla",
-    "description": (
-        "Hey.\n"
-        "You found me.\n\n"
-        "Before you get too comfortable, a couple of quick things.\n\n"
-        "I'll wait.\n"
-        "᲼᲼"
-    ),
-    "fields": [
-        ("Step 1 — Read the Rules",
-         "Go read #rules.\nWhen you're done, click **Accept Rules**."),
-        ("Step 2 — Get Roles",
-         "After verification, select your roles from #roles.\nLets you customize your experience."),
-        ("Step 3 — Start Exploring",
-         "Then the rest opens up:\nChats, quests, orders, casino… everything.")
-    ],
-    "footer": "You can always use /start later if you forget."
-}
-
-AFTER_RULES_EPHEMERAL = "Good.\nYou're in now."
-
-AFTER_RULES_DM = {
-    "title": "You're In",
-    "description": (
-        "Mmm.\n"
-        "Nice work.\n\n"
-        "Here's what I'd do first — it makes everything else feel better.\n"
-        "᲼᲼"
-    ),
-    "fields": [
-        ("Roles",
-         "Choose your roles in #roles.\nIt changes how I speak to you."),
-        ("Introduce Yourself",
-         "Drop something in #introductions.\nThat's how I really start noticing you."),
-        ("Your First Commands",
-         "/profile — see what I think of you\n"
-         "/daily — free coins\n"
-         "/quests — things worth doing\n"
-         "/order_personal — your first real task")
-    ],
-    "footer": "No rush. I'll be watching."
-}
-
-START_UNVERIFIED = {
-    "title": "Almost There",
-    "description": (
-        "Hey.\n\n"
-        "One last step before I let you in fully.\n"
-        "᲼᲼"
-    ),
-    "fields": [
-        ("What To Do",
-         "1) Read #rules\n2) Press **Accept Rules**"),
-        ("After That",
-         "Everything opens — chats, quests, orders, casino.")
-    ],
-    "footer": "Run /start again anytime if you get lost."
-}
-
-START_VERIFIED = {
-    "title": "You're Ready",
-    "description": (
-        "Good.\n\n"
-        "Here's the simplest way to start earning my attention.\n"
-        "᲼᲼"
-    ),
-    "fields": [
-        ("Basic Commands",
-         "/profile — your server profile\n"
-         "/daily — claim free coins daily\n"
-         "/quests — tasks to complete\n"
-         "/order_personal — a task just for you"),
-        ("Channels",
-         "#orders — my announcements\n"
-         "#spotlight — who's impressing me\n"
-         "#casino — where you risk it all"),
-        ("Stop IslaBot Interactions",
-         "/opt-out — Stops IslaBot activity interactions\n"
-         "/safeword — Changes IslaBot's tone to be neutral\n"
-         "/vacation — Pauses IslaBot interactions such as Tax & task failures for a minimum of 3 days.")
-    ],
-    "footer": "Take your time. I'm not going anywhere."
-}
-
-REMINDER_48H_DM = {
-    "title": "Gentle Reminder",
-    "description": (
-        "Hey.\n\n"
-        "You still haven't accepted the rules, so parts of me are locked to you.\n\n"
-        "If you want everything, go back to #rules and press **Accept Rules**.\n"
-        "᲼᲼"
-    ),
-    "footer": "No pressure. Just thought you should know."
-}
-
 def isla_embed(desc: str, thumb: str = "", title: str | None = None) -> discord.Embed:
     return helper_isla_embed(desc, title=title, thumb=thumb)
-
-
-
-class PronounSelect(discord.ui.Select):
-    def __init__(self, role_map: dict[str, int]):
-        options = [
-            discord.SelectOption(label="puppy he/him", value="puppy"),
-            discord.SelectOption(label="kitten she/her", value="kitten"),
-            discord.SelectOption(label="pet they/them", value="pet"),
-            discord.SelectOption(label="none", value="none"),
-        ]
-        super().__init__(placeholder="Pick your pronouns…", min_values=1, max_values=1, options=options)
-        self.role_map = role_map
-
-    async def callback(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        if not guild:
-            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        choice = self.values[0]
-        member = interaction.user if isinstance(interaction.user, discord.Member) else guild.get_member(interaction.user.id)
-        if not member:
-            embed = create_embed("Member not found.", color="info", is_dm=False, is_system=False)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        # remove all pronoun roles first
-        to_remove = []
-        for k, rid in self.role_map.items():
-            if rid:
-                role = guild.get_role(rid)
-                if role and role in member.roles:
-                    to_remove.append(role)
-        if to_remove:
-            try:
-                await member.remove_roles(*to_remove, reason="Pronoun role switch")
-            except discord.Forbidden:
-                pass
-
-        if choice != "none":
-            rid = self.role_map.get(choice)
-            if rid:
-                role = guild.get_role(rid)
-                if role:
-                    try:
-                        await member.add_roles(role, reason="Pronoun role set")
-                    except discord.Forbidden:
-                        pass
-
-        embed = create_embed("Noted.", color="info", is_dm=False, is_system=False)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-
-
-class OnboardingView(discord.ui.View):
-    def __init__(self, cog: "Onboarding"):
-        super().__init__(timeout=None)
-        self.cog = cog
-
-    @discord.ui.button(label="Accept Rules", style=discord.ButtonStyle.success, custom_id="isla_accept_rules")
-    async def accept_rules(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.cog.handle_accept_rules(interaction)
-
-    @discord.ui.button(label="How to Start", style=discord.ButtonStyle.primary, custom_id="isla_how_to_start")
-    async def how_to_start(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.cog.handle_how_to_start(interaction)
-
-    @discord.ui.button(label="Set Pronouns", style=discord.ButtonStyle.secondary, custom_id="isla_set_pronouns")
-    async def set_pronouns(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.cog.handle_set_pronouns(interaction)
 
 
 class Onboarding(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-
-        # configure in your config
-        self.welcome_channel_id = int(bot.cfg.get("channels", "welcome", default=0) or 0)
-        self.rules_channel_id = int(bot.cfg.get("channels", "rules", default=0) or 0)
-        self.roles_channel_id = int(bot.cfg.get("channels", "roles", default=0) or 0)
-        self.intro_channel_id = int(bot.cfg.get("channels", "introductions", default=0) or 0)
-        self.spam_channel_id = int(bot.cfg.get("channels", "spam", default=0) or 0)
-
-        self.role_unverified_id = int(bot.cfg.get("roles", "unverified", default=0) or 0)
-        self.role_verified_id = int(bot.cfg.get("roles", "verified", default=0) or 0)
-
-        # pronoun roles
-        self.pronoun_roles = {
-            "puppy": int(bot.cfg.get("roles", "puppy_role", default=0) or 0),
-            "kitten": int(bot.cfg.get("roles", "kitten_role", default=0) or 0),
-            "pet": int(bot.cfg.get("roles", "pet_role", default=0) or 0),
-        }
-
-        self.view = OnboardingView(self)
-        bot.add_view(self.view)  # persistent buttons (for reminder fallback)
-        self.unverified_reminder_loop.start()
         
         # Staff controls
         self.staff = StaffControls(self)
@@ -222,33 +28,6 @@ class Onboarding(commands.Cog):
             bot.tree.add_command(self.staff)
         except Exception:
             pass  # Command already registered - ignore
-
-    def cog_unload(self):
-        self.unverified_reminder_loop.cancel()
-
-    # -------- helpers --------
-    def _ch(self, guild: discord.Guild, cid: int) -> discord.TextChannel | None:
-        ch = guild.get_channel(cid) if cid else None
-        return ch if isinstance(ch, discord.TextChannel) else None
-
-    async def _give_starter_coins(self, guild_id: int, user_id: int, amount: int = 250):
-        """Give starter coins to a new user."""
-        # Use economy cog's method if available, otherwise direct DB
-        economy = self.bot.get_cog("Economy")
-        if economy and hasattr(economy, "_add_coins"):
-            await economy._add_coins(guild_id, user_id, amount, "onboarding_starter")
-        else:
-            # Fallback: direct DB access
-            await self.bot.db.execute(
-                """
-                INSERT INTO users(guild_id,user_id,coins,obedience,lce,last_active_ts)
-                VALUES(?,?,?,0,0,?)
-                ON CONFLICT(guild_id,user_id)
-                DO UPDATE SET coins=coins+excluded.coins
-                """,
-                (guild_id, user_id, amount, now_ts())
-            )
-
 
     # -------- global helper for user flags (can be imported elsewhere) --------
     async def isla_user_flags(self, gid: int, uid: int) -> dict:
@@ -305,196 +84,7 @@ class Onboarding(commands.Cog):
             # Table might not exist, return False
             return False
 
-    # -------- events --------
-    @commands.Cog.listener("on_member_join")
-    async def on_member_join(self, member: discord.Member):
-        if member.bot:
-            return
-            
-        guild = member.guild
-        welcome = self._ch(guild, self.welcome_channel_id)
-        if not welcome:
-            return
-
-        # add unverified role if configured
-        unv = guild.get_role(self.role_unverified_id) if self.role_unverified_id else None
-        if unv:
-            try:
-                await member.add_roles(unv, reason="New join unverified")
-            except discord.Forbidden:
-                pass
-
-        # Track onboarding state
-        await self.bot.db.execute(
-            """
-            INSERT INTO onboarding_state(guild_id,user_id,joined_ts,verified_ts,last_reminder_ts)
-            VALUES(?,?,?,?,0)
-            ON CONFLICT(guild_id,user_id)
-            DO UPDATE SET joined_ts=excluded.joined_ts, verified_ts=0, last_reminder_ts=0
-            """,
-            (guild.id, member.id, now_ts(), 0)
-        )
-
-        # Welcome message with new format
-        ping = f"||{member.mention}||"
-        
-        # Get channel mentions from config
-        rules_channel_mention = f"<#{self.rules_channel_id}>" if self.rules_channel_id else "#rules"
-        roles_channel_mention = f"<#{self.roles_channel_id}>" if self.roles_channel_id else "#roles"
-        
-        # Create welcome embed (system message - includes author)
-        embed = create_embed(
-            description=f"Welcome to Isla://domain {member.mention}\n᲼᲼",
-            color=0x65566c,
-            is_dm=False,
-            is_system=True  # System message - includes author
-        )
-        
-        embed.add_field(
-            name="<:rules1:1454433030553997454> Rules",
-            value=f"Accept Rules {rules_channel_mention}",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="<:roles2:1454433023779930183> Roles",
-            value=f"Get Roles {roles_channel_mention}",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="<:rocket2:1454433022580359235> Getting Started",
-            value="After accepting rules, you will receive a DM to get started.",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="᲼᲼",
-            value="",
-            inline=False
-        )
-        
-        embed.set_footer(
-            text="Having issues? Type /support",
-            icon_url="https://i.imgur.com/irmCXhw.gif"
-        )
-        
-        await welcome.send(content=ping, embed=embed)
-
-    # -------- button handlers --------
-    async def handle_accept_rules(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        if not guild:
-            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        member = interaction.user if isinstance(interaction.user, discord.Member) else guild.get_member(interaction.user.id)
-        if not member:
-            embed = create_embed("Member not found.", color="info", is_dm=False, is_system=False)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-
-        verified = guild.get_role(self.role_verified_id) if self.role_verified_id else None
-        unv = guild.get_role(self.role_unverified_id) if self.role_unverified_id else None
-
-        if verified and verified not in member.roles:
-            try:
-                await member.add_roles(verified, reason="Accepted rules")
-            except discord.Forbidden:
-                pass
-        if unv and unv in member.roles:
-            try:
-                await member.remove_roles(unv, reason="Accepted rules")
-            except discord.Forbidden:
-                pass
-
-        # Update onboarding state
-        await self.bot.db.execute(
-            "UPDATE onboarding_state SET verified_ts=?, last_reminder_ts=0 WHERE guild_id=? AND user_id=?",
-            (now_ts(), guild.id, member.id)
-        )
-
-        # Give starter coins
-        await self._give_starter_coins(guild.id, member.id, 250)
-
-        # Public confirmation (ephemeral)
-        await interaction.response.send_message(AFTER_RULES_EPHEMERAL, ephemeral=True)
-
-        # DM starter guide (best effort)
-        try:
-            roles_mention = "#roles"  # You can add config for this if needed
-            intro_mention = f"<#{self.intro_channel_id}>" if self.intro_channel_id else "#introductions"
-            e = create_embed(AFTER_RULES_DM["description"], title=AFTER_RULES_DM["title"], color="system", is_dm=True, is_system=False)
-            # Replace placeholders in fields
-            for n, v in AFTER_RULES_DM["fields"]:
-                v_processed = v.replace("#roles", roles_mention).replace("#introductions", intro_mention)
-                e.add_field(name=n, value=v_processed, inline=False)
-            e.set_footer(text=AFTER_RULES_DM["footer"])
-            await member.send(embed=e)
-        except discord.Forbidden:
-            pass
-
-    async def handle_how_to_start(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        if not guild:
-            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        intro_ch_mention = f"<#{self.intro_channel_id}>" if self.intro_channel_id else "#introductions"
-        spam_ch_mention = f"<#{self.spam_channel_id}>" if self.spam_channel_id else "#spam"
-        desc = (
-            "Start.\n\n"
-            f"1) Accept rules.\n"
-            f"2) Introduce yourself in {intro_ch_mention}.\n"
-            f"3) Use commands in {spam_ch_mention}.\n\n"
-            "Try:\n"
-            "• `/profile`\n"
-            "• `/daily`\n"
-            "• `/quests`\n"
-            "• `/order_personal`\n"
-            "• `/casino`\n"
-            "᲼᲼"
-        )
-        await interaction.response.send_message(embed=isla_embed(desc), ephemeral=True)
-
-    async def handle_set_pronouns(self, interaction: discord.Interaction):
-        view = discord.ui.View(timeout=60)
-        view.add_item(PronounSelect(self.pronoun_roles))
-        await interaction.response.send_message("Pick one.", view=view, ephemeral=True)
-
     # -------- slash commands --------
-    @app_commands.command(name="start", description="Get started with Isla.")
-    async def start(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        guild = interaction.guild
-        if not guild:
-            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
-            return await interaction.followup.send(embed=embed, ephemeral=True)
-
-        verified_role = guild.get_role(self.role_verified_id) if self.role_verified_id else None
-        member = interaction.user if isinstance(interaction.user, discord.Member) else guild.get_member(interaction.user.id)
-        is_verified = bool(member and verified_role and verified_role in member.roles)
-
-        if not is_verified:
-            rules_mention = f"<#{self.rules_channel_id}>" if self.rules_channel_id else "#rules"
-            e = isla_embed(START_UNVERIFIED["description"], title=START_UNVERIFIED["title"])
-            for n, v in START_UNVERIFIED["fields"]:
-                v_processed = v.replace("#rules", rules_mention)
-                e.add_field(name=n, value=v_processed, inline=False)
-            e.set_footer(text=START_UNVERIFIED["footer"])
-            return await interaction.followup.send(embed=e, ephemeral=True)
-
-        orders_id = int(self.bot.cfg.get("channels", "orders", default=0) or 0)
-        spotlight_id = int(self.bot.cfg.get("channels", "spotlight", default=0) or 0)
-        casino_id = int(self.bot.cfg.get("channels", "casino", default=0) or 0)
-        orders_mention = f"<#{orders_id}>" if orders_id else "#orders"
-        spotlight_mention = f"<#{spotlight_id}>" if spotlight_id else "#spotlight"
-        casino_mention = f"<#{casino_id}>" if casino_id else "#casino"
-        e = isla_embed(START_VERIFIED["description"], title=START_VERIFIED["title"])
-        for n, v in START_VERIFIED["fields"]:
-            v_processed = v.replace("#orders", orders_mention).replace("#spotlight", spotlight_mention).replace("#casino", casino_mention)
-            e.add_field(name=n, value=v_processed, inline=False)
-        e.set_footer(text=START_VERIFIED["footer"])
-        await interaction.followup.send(embed=e, ephemeral=True)
-
     @app_commands.command(name="opt-out", description="Stop IslaBot interactions and reset your progress.")
     async def opt_out(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -600,7 +190,7 @@ class Onboarding(commands.Cog):
             "UPDATE users SET opted_out=0 WHERE guild_id=? AND user_id=?",
             (gid, interaction.user.id)
         )
-        e = isla_embed("Good.\nYou're back in.\nUse `/start` if you need the basics.\n᲼᲼", title="Opted In")
+        e = isla_embed("Good.\nYou're back in.\n᲼᲼", title="Opted In")
         await interaction.followup.send(embed=e, ephemeral=True)
 
     @app_commands.command(name="vacation", description="Pause IslaBot penalties for a while (min 3 days).")
@@ -731,13 +321,12 @@ class Onboarding(commands.Cog):
                 ephemeral=True
             )
 
-        # End vacation and start 24h cooldown (reset welcomed_ts so they don't get welcome back message)
+        # End vacation and start 24h cooldown
         await self.bot.db.execute(
             """
             UPDATE users
             SET vacation_until_ts=0,
-                vacation_last_used_ts=?,
-                vacation_welcomed_ts=0
+                vacation_last_used_ts=?
             WHERE guild_id=? AND user_id=?
             """,
             (now, gid, interaction.user.id)
@@ -752,92 +341,6 @@ class Onboarding(commands.Cog):
             ),
             ephemeral=True
         )
-
-    # -------- reminder system --------
-    @tasks.loop(minutes=30)
-    async def unverified_reminder_loop(self):
-        await self.bot.wait_until_ready()
-        now = now_ts()
-
-        for guild in self.bot.guilds:
-            gid = guild.id
-            welcome = self._ch(guild, self.welcome_channel_id)
-
-            # Find unverified users who joined >=48h ago and haven't been reminded in 24h
-            rows = await self.bot.db.fetchall(
-                """
-                SELECT user_id, joined_ts, verified_ts, last_reminder_ts
-                FROM onboarding_state
-                WHERE guild_id=? AND verified_ts=0
-                """,
-                (gid,)
-            )
-
-            if not rows:
-                continue
-
-            for r in rows:
-                uid = int(r["user_id"])
-                joined_ts = int(r["joined_ts"])
-                last_rem = int(r["last_reminder_ts"] or 0)
-
-                if now - joined_ts < REMINDER_AFTER_SECONDS:
-                    continue
-                if last_rem and (now - last_rem) < REMINDER_COOLDOWN_SECONDS:
-                    continue
-
-                member = guild.get_member(uid)
-                if not member:
-                    # user left; clean row
-                    await self.bot.db.execute("DELETE FROM onboarding_state WHERE guild_id=? AND user_id=?", (gid, uid))
-                    continue
-
-                # If they somehow got verified role but verified_ts not set, fix it
-                verified_role = guild.get_role(self.role_verified_id) if self.role_verified_id else None
-                if verified_role and verified_role in member.roles:
-                    await self.bot.db.execute(
-                        "UPDATE onboarding_state SET verified_ts=? WHERE guild_id=? AND user_id=?",
-                        (now, gid, uid)
-                    )
-                    continue
-
-                # Compose reminder (updated text) - DM message
-                rules_mention = f"<#{self.rules_channel_id}>" if self.rules_channel_id else "#rules"
-                desc = REMINDER_48H_DM["description"].replace("#rules", rules_mention)
-                e = create_embed(desc, title=REMINDER_48H_DM["title"], color="system", is_dm=True, is_system=False)
-                e.set_footer(text=REMINDER_48H_DM["footer"])
-
-                # Try DM first
-                sent = False
-                try:
-                    await member.send(embed=e)
-                    sent = True
-                except discord.Forbidden:
-                    sent = False
-
-                # Fallback: #welcome ping (spoiler mention to avoid visual spam) - System message
-                if not sent and welcome:
-                    ping = f"||<@{uid}>||"
-                    # Fallback is a system message (sent to channel)
-                    e_fallback = create_embed(desc, title=REMINDER_48H_DM["title"], color="system", is_dm=False, is_system=True)
-                    e_fallback.set_footer(text=REMINDER_48H_DM["footer"])
-                    await welcome.send(content=ping, embed=e_fallback, view=self.view)
-
-                await self.bot.db.execute(
-                    "UPDATE onboarding_state SET last_reminder_ts=? WHERE guild_id=? AND user_id=?",
-                    (now, gid, uid)
-                )
-
-    @unverified_reminder_loop.before_loop
-    async def before_reminder_loop(self):
-        await self.bot.wait_until_ready()
-
-    # -------- cleanup --------
-    @commands.Cog.listener("on_member_remove")
-    async def on_member_remove(self, member: discord.Member):
-        """Clean up onboarding state when a user leaves."""
-        await self.bot.db.execute("DELETE FROM onboarding_state WHERE guild_id=? AND user_id=?", (member.guild.id, member.id))
-
 
 # -------- Staff Controls --------
 def staff_check(interaction: discord.Interaction) -> bool:
@@ -866,8 +369,8 @@ class StaffControls(app_commands.Group):
 
         await self.cog.bot.db.execute(
             """
-            INSERT INTO users(guild_id,user_id,coins,obedience,opted_out,safeword_on,vacation_until_ts,vacation_last_used_ts,vacation_welcomed_ts)
-            VALUES(?,?,0,0,0,0,?,0,0)
+            INSERT INTO users(guild_id,user_id,coins,obedience,opted_out,safeword_on,vacation_until_ts,vacation_last_used_ts)
+            VALUES(?,?,0,0,0,0,?,0)
             ON CONFLICT(guild_id,user_id)
             DO UPDATE SET vacation_until_ts=excluded.vacation_until_ts, vacation_last_used_ts=0
             """,
@@ -964,7 +467,6 @@ class StaffControls(app_commands.Group):
         )
 
         import json
-from utils.embed_utils import create_embed
         await self.cog.bot.db.execute(
             "INSERT INTO staff_actions(guild_id,staff_id,user_id,action,meta_json,ts) VALUES(?,?,?,?,?,?)",
             (gid, interaction.user.id, member.id, "safeword_set", json.dumps({"enabled": enabled}), now)
@@ -978,84 +480,6 @@ from utils.embed_utils import create_embed
             ),
             ephemeral=True
         )
-
-    @app_commands.command(name="test_welcome", description="Test the welcome message (staff).")
-    @app_commands.describe(member="Member to test with (defaults to you)")
-    async def test_welcome(self, interaction: discord.Interaction, member: discord.Member | None = None):
-        if not staff_check(interaction):
-            embed = create_embed("No.", color="info", is_dm=False, is_system=False)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-        if not interaction.guild:
-            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
-            return await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-        await interaction.response.defer(ephemeral=True)
-        
-        # Use provided member or the command user
-        test_member = member if member else (interaction.user if isinstance(interaction.user, discord.Member) else None)
-        if not test_member:
-            embed = create_embed("Could not get member.", color="info", is_dm=False, is_system=False)
-            return await interaction.followup.send(embed=embed, ephemeral=True)
-        
-        # Get welcome channel
-        welcome_channel_id = int(self.cog.bot.cfg.get("channels", "welcome", default=0) or 0)
-        welcome = interaction.guild.get_channel(welcome_channel_id) if welcome_channel_id else None
-        
-        if not welcome or not isinstance(welcome, discord.TextChannel):
-            return await interaction.followup.send(
-                f"Welcome channel not configured or not found. Set it in config.yml or use /config channels.",
-                ephemeral=True
-            )
-        
-        # Get channel mentions from config
-        rules_channel_id = int(self.cog.bot.cfg.get("channels", "rules", default=0) or 0)
-        roles_channel_id = int(self.cog.bot.cfg.get("channels", "roles", default=0) or 0)
-        
-        rules_channel_mention = f"<#{rules_channel_id}>" if rules_channel_id else "#rules"
-        roles_channel_mention = f"<#{roles_channel_id}>" if roles_channel_id else "#roles"
-        
-        # Create welcome embed (system message - includes author)
-        embed = create_embed(
-            description=f"Welcome to Isla://domain {test_member.mention}\n᲼᲼",
-            color=0x65566c,
-            is_dm=False,
-            is_system=True  # System message - includes author
-        )
-        
-        embed.add_field(
-            name="<:rules1:1454433030553997454> Rules",
-            value=f"Accept Rules {rules_channel_mention}",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="<:roles2:1454433023779930183> Roles",
-            value=f"Get Roles {roles_channel_mention}",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="<:rocket2:1454433022580359235> Getting Started",
-            value="After accepting rules, you will receive a DM to get started.",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="᲼᲼",
-            value="",
-            inline=False
-        )
-        
-        embed.set_footer(
-            text="Having issues? Type /support",
-            icon_url="https://i.imgur.com/irmCXhw.gif"
-        )
-        
-        ping = f"||{test_member.mention}||"
-        await welcome.send(content=ping, embed=embed)
-        response_embed = create_embed(f"Test welcome message sent in {welcome.mention}!", color="info", is_dm=False, is_system=False)
-        await interaction.followup.send(embed=response_embed, ephemeral=True)
 
     @app_commands.command(name="safeword_status", description="View a user's safeword status (staff).")
     @app_commands.describe(member="Target")
