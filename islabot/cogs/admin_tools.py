@@ -71,7 +71,7 @@ class AdminTools(commands.Cog):
         await self.bot.flags.set_channel(gid, channel.id, feature, enabled)
         await self.bot.db.audit(gid, interaction.user.id, None, "toggle_feature_channel", json.dumps({"feature": feature, "channel_id": channel.id, "enabled": enabled}), now_ts())
         embed = create_embed(f"Channel {channel.mention} feature `{feature}` set to {enabled}.", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     # ---------------------------
     # Per-channel config

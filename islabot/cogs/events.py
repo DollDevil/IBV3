@@ -1036,7 +1036,7 @@ class EventSystem(commands.Cog):
 
         # Calculate dates
         from datetime import datetime
-from utils.embed_utils import create_embed
+        from utils.embed_utils import create_embed
         if start_date:
             try:
                 start_dt = datetime.strptime(start_date, "%Y-%m-%d")
