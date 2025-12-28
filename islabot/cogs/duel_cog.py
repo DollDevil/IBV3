@@ -6,6 +6,7 @@ from discord import app_commands
 
 from utils.isla_style import isla_embed, fmt
 from utils.economy import ensure_wallet, get_wallet, add_coins
+from utils.embed_utils import create_embed
 
 class DuelAcceptView(discord.ui.View):
     def __init__(self, bot: commands.Bot, challenger_id: int, target_id: int, amount: int):
@@ -109,7 +110,8 @@ class DuelCog(commands.Cog):
     async def duel(self, interaction: discord.Interaction, user: discord.Member, amount: int):
         await interaction.response.defer(ephemeral=True)
         if not interaction.guild_id:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         if user.bot or user.id == interaction.user.id:
             return await interaction.followup.send(embed=isla_embed("No.\n᲼᲼", title="Duel"), ephemeral=True)
@@ -135,7 +137,8 @@ class DuelCog(commands.Cog):
             "᲼᲼",
             title="Duel Request"
         )
-        await interaction.followup.send("Posted.\n᲼᲼", ephemeral=True)
+        embed = create_embed("Posted.\n᲼᲼", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
         await interaction.channel.send(content=f"{user.mention}", embed=embed, view=view)
 
 async def setup(bot: commands.Bot):

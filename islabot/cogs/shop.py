@@ -7,6 +7,7 @@ from discord import app_commands
 
 from core.utils import now_ts, fmt
 from utils.helpers import isla_embed as helper_isla_embed
+from utils.embed_utils import create_embed
 
 def isla_embed(desc: str, icon: str) -> discord.Embed:
     return helper_isla_embed(desc, icon=icon)
@@ -122,7 +123,8 @@ class Shop(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def collars_setup(self, interaction: discord.Interaction):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
 
         await self.seed_default_shop(gid)
@@ -138,7 +140,8 @@ class Shop(commands.Cog):
     @app_commands.describe(tier="base|premium|prestige|limited")
     async def shop(self, interaction: discord.Interaction, tier: str = "base"):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
         tier = tier.lower().strip()
         if tier not in ("base", "premium", "prestige", "limited"):
@@ -149,7 +152,8 @@ class Shop(commands.Cog):
             (gid, tier)
         )
         if not rows:
-            return await interaction.response.send_message("No items found for that tier.", ephemeral=True)
+            embed = create_embed("No items found for that tier.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         lines = []
         for r in rows:
@@ -160,7 +164,8 @@ class Shop(commands.Cog):
     @app_commands.command(name="buy", description="Buy a shop item with Coins.")
     async def buy(self, interaction: discord.Interaction, item_id: str):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
         uid = interaction.user.id
         await self._ensure_user(gid, uid)
@@ -170,12 +175,14 @@ class Shop(commands.Cog):
             (gid, item_id)
         )
         if not row or int(row["active"]) != 1:
-            return await interaction.response.send_message("That item isn't available.", ephemeral=True)
+            embed = create_embed("That item isn't available.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         price = int(row["price"])
         coins = await self._get_coins(gid, uid)
         if coins < price:
-            return await interaction.response.send_message("Not enough Coins.", ephemeral=True)
+            embed = create_embed("Not enough Coins.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await self._set_coins(gid, uid, coins - price)
         await self.bot.db.execute(
@@ -194,7 +201,8 @@ class Shop(commands.Cog):
     @app_commands.command(name="inventory", description="View your inventory.")
     async def inventory(self, interaction: discord.Interaction):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
         uid = interaction.user.id
 
@@ -203,7 +211,8 @@ class Shop(commands.Cog):
             (gid, uid)
         )
         if not rows:
-            return await interaction.response.send_message("Inventory is empty.", ephemeral=True)
+            embed = create_embed("Inventory is empty.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         lines = [f"`{r['item_id']}` x{int(r['qty'])}" for r in rows]
         desc = f"{interaction.user.mention}\nInventory\n\n" + "\n".join(lines) + "\n᲼᲼"
@@ -213,20 +222,23 @@ class Shop(commands.Cog):
     @app_commands.describe(slot="collar", item_id="Item ID from your inventory")
     async def equip(self, interaction: discord.Interaction, slot: str, item_id: str):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         gid = interaction.guild_id
         uid = interaction.user.id
         slot = slot.lower().strip()
         if slot not in ("collar", "badge"):
-            return await interaction.response.send_message("Unsupported slot.", ephemeral=True)
+            embed = create_embed("Unsupported slot.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         inv = await self.bot.db.fetchone(
             "SELECT qty FROM inventory WHERE guild_id=? AND user_id=? AND item_id=?",
             (gid, uid, item_id)
         )
         if not inv or int(inv["qty"]) <= 0:
-            return await interaction.response.send_message("You don't own that item.", ephemeral=True)
+            embed = create_embed("You don't own that item.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await self.bot.db.execute(
             """

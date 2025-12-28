@@ -6,6 +6,8 @@ from discord.ext import commands
 
 from core.utils import now_ts, now_local, fmt
 from core.isla_text import sanitize_isla_text
+from utils.embed_utils import create_embed
+from utils.embed_utils import create_embed
 
 CASINO_THUMBS = [
     "https://i.imgur.com/jzk6IfH.png",
@@ -22,10 +24,14 @@ def day_key_uk() -> str:
 
 
 def dm_embed(desc: str, icon: str) -> discord.Embed:
-    e = discord.Embed(description=sanitize_isla_text(desc))
-    e.set_author(name="Isla", icon_url=icon)
-    e.set_thumbnail(url=random.choice(CASINO_THUMBS))
-    return e
+    """Create a DM embed (includes author)."""
+    return create_embed(
+        description=sanitize_isla_text(desc),
+        color="casino",
+        thumbnail=random.choice(CASINO_THUMBS),
+        is_dm=True,
+        is_system=False
+    )
 
 
 class CasinoBigWinDM(commands.Cog):

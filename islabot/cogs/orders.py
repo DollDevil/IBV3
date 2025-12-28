@@ -12,6 +12,7 @@ from core.utils import now_ts, now_local, fmt
 from core.order_tones import ORDER_TONES, RITUAL_EXTRA_TONES, TONE_POOLS
 from core.order_templates import PERSONAL_TEMPLATES, RITUAL_TEMPLATES, weighted_choice
 from core.isla_text import sanitize_isla_text
+from utils.embed_utils import create_embed
 
 UK_TZ = ZoneInfo("Europe/London")
 
@@ -369,7 +370,8 @@ class Orders(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         rows = await self.bot.db.fetchall(
             "SELECT order_id,kind,scope,owner_user_id,title,reward_coins,reward_obedience,due_ts,max_slots,slots_taken "
@@ -403,11 +405,13 @@ class Orders(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         r = await self.bot.db.fetchone("SELECT * FROM orders WHERE guild_id=? AND order_id=? AND status='active'", (gid, order_id))
         if not r:
-            return await interaction.followup.send("Order not found.", ephemeral=True)
+            embed = create_embed("Order not found.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         remaining = max(0, int(r["max_slots"]) - int(r["slots_taken"]))
         hint = f"<#{int(r['hint_channel_id'])}>" if int(r["hint_channel_id"]) else "the server"
@@ -433,24 +437,29 @@ class Orders(commands.Cog):
         await interaction.response.defer()
         gid = interaction.guild_id
         if not gid or not interaction.guild:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         order = await self.bot.db.fetchone("SELECT * FROM orders WHERE guild_id=? AND order_id=? AND status='active'", (gid, order_id))
         if not order:
-            return await interaction.followup.send("Order not found.", ephemeral=True)
+            embed = create_embed("Order not found.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # personal order gate
         if order["scope"] == "user" and int(order["owner_user_id"]) != interaction.user.id:
-            return await interaction.followup.send("That order is not for you.", ephemeral=True)
+            embed = create_embed("That order is not for you.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         remaining = max(0, int(order["max_slots"]) - int(order["slots_taken"]))
         if remaining <= 0:
-            return await interaction.followup.send("No slots left.", ephemeral=True)
+            embed = create_embed("No slots left.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         exists = await self.bot.db.fetchone("SELECT status FROM order_runs WHERE guild_id=? AND order_id=? AND user_id=?",
                                            (gid, order_id, interaction.user.id))
         if exists:
-            return await interaction.followup.send("You already interacted with this order.", ephemeral=True)
+            embed = create_embed("You already interacted with this order.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         accepted = now_ts()
         due_ts = int(order["due_ts"])
@@ -481,13 +490,15 @@ class Orders(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         order = await self.bot.db.fetchone("SELECT requirement_json FROM orders WHERE guild_id=? AND order_id=? AND status='active'", (gid, order_id))
         run = await self.bot.db.fetchone("SELECT accepted_ts,due_ts,status FROM order_runs WHERE guild_id=? AND order_id=? AND user_id=?",
                                          (gid, order_id, interaction.user.id))
         if not order or not run or run["status"] != "accepted":
-            return await interaction.followup.send("No active run found.", ephemeral=True)
+            embed = create_embed("No active run found.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         requirement = json.loads(order["requirement_json"])
         ok, detail = await self._check_completion(gid, interaction.user.id, requirement, int(run["accepted_ts"]), int(run["due_ts"]))
@@ -506,13 +517,15 @@ class Orders(commands.Cog):
         await interaction.response.defer()
         gid = interaction.guild_id
         if not gid or not interaction.guild:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         order = await self.bot.db.fetchone("SELECT * FROM orders WHERE guild_id=? AND order_id=? AND status='active'", (gid, order_id))
         run = await self.bot.db.fetchone("SELECT * FROM order_runs WHERE guild_id=? AND order_id=? AND user_id=?",
                                          (gid, order_id, interaction.user.id))
         if not order or not run or run["status"] != "accepted":
-            return await interaction.followup.send("You have not accepted this order.", ephemeral=True)
+            embed = create_embed("You have not accepted this order.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         if now_ts() > int(run["due_ts"]):
             # timeout -> fail
@@ -544,10 +557,12 @@ class Orders(commands.Cog):
                     content=f"Order proof request from <@{interaction.user.id}> for order `{order_id}`",
                     embed=discord.Embed(description=sanitize_isla_text(note or "No note provided."))
                 )
-            return await interaction.followup.send("Proof submitted. Staff will review.", ephemeral=True)
+            embed = create_embed("Proof submitted. Staff will review.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         if not ok:
-            return await interaction.followup.send(f"Not complete yet: {detail}", ephemeral=True)
+            embed = create_embed(f"Not complete yet: {detail}", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Success
         completed_ts = now_ts()
@@ -615,12 +630,14 @@ class Orders(commands.Cog):
         await interaction.response.defer()
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         run = await self.bot.db.fetchone("SELECT status FROM order_runs WHERE guild_id=? AND order_id=? AND user_id=?",
                                          (gid, order_id, interaction.user.id))
         if not run or run["status"] != "accepted":
-            return await interaction.followup.send("No accepted order found.", ephemeral=True)
+            embed = create_embed("No accepted order found.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self.bot.db.execute("UPDATE order_runs SET status='abandoned' WHERE guild_id=? AND order_id=? AND user_id=?",
                                   (gid, order_id, interaction.user.id))
@@ -738,7 +755,8 @@ class Orders(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid or not interaction.guild:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # limit: 1 active personal order per user
         row = await self.bot.db.fetchone(
@@ -746,7 +764,8 @@ class Orders(commands.Cog):
             (gid, interaction.user.id)
         )
         if row:
-            return await interaction.followup.send("You already have a personal order active.", ephemeral=True)
+            embed = create_embed("You already have a personal order active.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         stage = await self._user_stage(gid, interaction.user.id)
         opener = pick(ORDER_TONES, "personal_order", stage)
@@ -802,7 +821,8 @@ class Orders(commands.Cog):
             hint_channel_id=self._spam_ch(),
             announce_key="order_announce"
         )
-        await interaction.followup.send(f"Personal order created: `{order_id}`", ephemeral=True)
+        embed = create_embed(f"Personal order created: `{order_id}`", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     # ------------------ scheduler: reminders + expirations ------------------
     @tasks.loop(seconds=60)

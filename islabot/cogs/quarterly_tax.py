@@ -21,6 +21,7 @@ import discord
 from discord.ext import commands, tasks
 from utils.helpers import isla_embed, now_ts
 from core.utils import fmt
+from utils.embed_utils import create_embed
 
 # Tax configuration
 TAX_INTERVAL_SECONDS = 4 * 30 * 24 * 3600  # 4 months in seconds (approximate)

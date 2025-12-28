@@ -7,6 +7,7 @@ from utils.isla_style import isla_embed, fmt
 from utils.guild_config import cfg_get
 from utils.economy import ensure_wallet, get_wallet, add_coins
 from utils.uk_parse import now_ts
+from utils.embed_utils import create_embed
 
 # -------------------------
 # Helpers

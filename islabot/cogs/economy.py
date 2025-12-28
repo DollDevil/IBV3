@@ -6,6 +6,7 @@ from discord import app_commands
 
 from core.utils import now_ts, fmt
 from utils.helpers import isla_embed as helper_isla_embed
+from utils.embed_utils import create_embed
 
 def isla_embed(desc: str, icon: str) -> discord.Embed:
     return helper_isla_embed(desc, icon=icon)
@@ -50,7 +51,8 @@ class Economy(commands.Cog):
     @app_commands.command(name="balance", description="Check your Coins.")
     async def balance(self, interaction: discord.Interaction):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
         uid = interaction.user.id
         coins = await self._get_coins(gid, uid)
@@ -61,11 +63,14 @@ class Economy(commands.Cog):
     @app_commands.describe(user="Who to pay", amount="Coins to send")
     async def pay(self, interaction: discord.Interaction, user: discord.Member, amount: int):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         if amount <= 0:
-            return await interaction.response.send_message("Amount must be > 0.", ephemeral=True)
+            embed = create_embed("Amount must be > 0.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         if user.bot:
-            return await interaction.response.send_message("Not to bots.", ephemeral=True)
+            embed = create_embed("Not to bots.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         gid = interaction.guild_id
         payer = interaction.user.id
@@ -73,7 +78,8 @@ class Economy(commands.Cog):
 
         payer_bal = await self._get_coins(gid, payer)
         if payer_bal < amount:
-            return await interaction.response.send_message("Not enough Coins.", ephemeral=True)
+            embed = create_embed("Not enough Coins.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await self._add_coins(gid, payer, -amount, f"pay:{receiver}")
         await self._add_coins(gid, receiver, +amount, f"receive:{payer}")
@@ -86,7 +92,8 @@ class Economy(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def coins_add(self, interaction: discord.Interaction, user: discord.Member, amount: int, reason: str = "admin"):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
         await self._add_coins(gid, user.id, amount, f"admin_add:{reason}")
         desc = f"{user.mention} received **{fmt(amount)} Coins**.\nReason: {reason}\n᲼᲼"
@@ -96,7 +103,8 @@ class Economy(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def coins_set(self, interaction: discord.Interaction, user: discord.Member, amount: int):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
         await self._ensure_user(gid, user.id)
         await self.bot.db.execute(

@@ -17,6 +17,7 @@ from discord.ext import commands, tasks
 from core.utils import now_ts
 from core.boss_damage import calculate_daily_damage
 from utils.uk_time import uk_day_ymd
+from utils.embed_utils import create_embed
 
 # Constants
 MESSAGE_COOLDOWN_SECONDS = 5  # 5-second cooldown for boss damage

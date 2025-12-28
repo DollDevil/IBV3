@@ -92,7 +92,8 @@ class OrdersGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         t = type.lower().strip()
         params = [gid]
@@ -141,7 +142,8 @@ class OrdersGroup(commands.Cog):
         gid = interaction.guild_id
         uid = interaction.user.id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         o = await self.bot.db.fetchone(
             """
@@ -213,7 +215,8 @@ class OrdersGroup(commands.Cog):
         gid = interaction.guild_id
         uid = interaction.user.id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         claim = await self.bot.db.fetchone(
             """
@@ -292,7 +295,8 @@ class OrdersGroup(commands.Cog):
         gid = interaction.guild_id
         uid = interaction.user.id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         claim = await self.bot.db.fetchone(
             "SELECT status FROM orders_claims WHERE guild_id=? AND order_id=? AND user_id=?",
@@ -341,7 +345,8 @@ class OrdersGroup(commands.Cog):
         gid = interaction.guild_id
         uid = interaction.user.id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         await ensure_obed(self.bot.db, gid, uid)
         r = await self.bot.db.fetchone(
@@ -404,7 +409,8 @@ class OrdersGroup(commands.Cog):
         gid = interaction.guild_id
         uid = interaction.user.id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Non-sexual roleplay-lite: "commitment"
         task = random.choice([
@@ -437,7 +443,8 @@ class OrdersGroup(commands.Cog):
         gid = interaction.guild_id
         uid = interaction.user.id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         cost = 75
         await ensure_wallet(self.bot.db, gid, uid)
@@ -476,7 +483,8 @@ class OrdersGroup(commands.Cog):
         gid = interaction.guild_id
         uid = interaction.user.id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         await ensure_obed(self.bot.db, gid, uid)
         prof = await self.bot.db.fetchone(
@@ -497,6 +505,7 @@ class OrdersGroup(commands.Cog):
             used_token = True
         else:
             from utils.economy import get_wallet
+from utils.embed_utils import create_embed
             await ensure_wallet(self.bot.db, gid, uid)
             w = await get_wallet(self.bot.db, gid, uid)
             if w.coins < cost:

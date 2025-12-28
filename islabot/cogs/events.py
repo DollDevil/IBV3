@@ -223,7 +223,8 @@ class EventSystem(commands.Cog):
         spam_id = self.ch_id("spam")
         if spam_id and interaction.channel_id != spam_id:
             try:
-                await interaction.response.send_message(f"Use <#{spam_id}> for that.", ephemeral=True)
+                embed = create_embed(f"Use <#{spam_id}> for that.", color="info", is_dm=False, is_system=False)
+                await interaction.response.send_message(embed=embed, ephemeral=True)
             except Exception:
                 pass
             return False
@@ -392,7 +393,8 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         wrapper = await self._active_wrapper(gid)
         boss = await self._active_boss(gid)
@@ -427,11 +429,13 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         boss = await self._active_boss(gid)
         if not boss:
-            return await interaction.followup.send("No active boss fight.", ephemeral=True)
+            embed = create_embed("No active boss fight.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         eid = int(boss["event_id"])
         rows = await self.bot.db.fetchall(
@@ -439,7 +443,8 @@ class EventSystem(commands.Cog):
             (gid, eid)
         )
         if not rows:
-            return await interaction.followup.send("No contributions yet.", ephemeral=True)
+            embed = create_embed("No contributions yet.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         desc = []
         for i, r in enumerate(rows, start=1):
@@ -452,11 +457,13 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         boss = await self._active_boss(gid)
         if not boss:
-            return await interaction.followup.send("No active boss fight.", ephemeral=True)
+            embed = create_embed("No active boss fight.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         eid = int(boss["event_id"])
         row = await self.bot.db.fetchone(
@@ -464,7 +471,8 @@ class EventSystem(commands.Cog):
             (gid, eid, interaction.user.id)
         )
         if not row:
-            return await interaction.followup.send("No contribution recorded yet.", ephemeral=True)
+            embed = create_embed("No contribution recorded yet.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         breakdown = json.loads(row["breakdown_json"] or "{}")
         desc = (
@@ -485,11 +493,13 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         boss = await self._active_boss(gid)
         if not boss:
-            return await interaction.followup.send("No active boss fight.", ephemeral=True)
+            embed = create_embed("No active boss fight.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         eid = int(boss["event_id"])
         cfg = json.loads(boss["config_json"])
@@ -503,7 +513,8 @@ class EventSystem(commands.Cog):
                 claimable.append(m)
 
         if not claimable:
-            return await interaction.followup.send("Nothing unlocked yet.", ephemeral=True)
+            embed = create_embed("Nothing unlocked yet.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         claimed_any = False
         total_tokens = 0
@@ -536,7 +547,8 @@ class EventSystem(commands.Cog):
             claimed_any = True
 
         if not claimed_any:
-            return await interaction.followup.send("You've already claimed everything you can.", ephemeral=True)
+            embed = create_embed("You've already claimed everything you can.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         if total_tokens > 0:
             await self.bot.db.execute(
@@ -575,11 +587,13 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         wrapper = await self._active_wrapper(gid)
         if not wrapper:
-            return await interaction.followup.send("No active season or holiday tokens right now.", ephemeral=True)
+            embed = create_embed("No active season or holiday tokens right now.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         scope_id = int(wrapper["event_id"])
         bal = await self._get_user_tokens(gid, interaction.user.id, scope_id)
@@ -596,11 +610,13 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         wrapper = await self._active_wrapper(gid)
         if not wrapper:
-            return await interaction.followup.send("No active season/holiday right now.", ephemeral=True)
+            embed = create_embed("No active season/holiday right now.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         cfg = json.loads(wrapper["config_json"])
         end = int(wrapper["end_ts"])
@@ -622,11 +638,13 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         wrapper = await self._active_wrapper(gid)
         if not wrapper:
-            return await interaction.followup.send("No active season/holiday shop right now.", ephemeral=True)
+            embed = create_embed("No active season/holiday shop right now.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         cfg = json.loads(wrapper["config_json"])
         items = cfg.get("season_shop_items") or []  # you fill later
@@ -656,7 +674,8 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         tier = tier.lower().strip()
         if tier not in {"daily", "weekly", "elite", "all"}:
@@ -685,7 +704,8 @@ class EventSystem(commands.Cog):
             tuple(params)
         )
         if not rows:
-            return await interaction.followup.send("No quests available right now.", ephemeral=True)
+            embed = create_embed("No quests available right now.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         lines = []
         for r in rows:
@@ -705,16 +725,19 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         q = await self.bot.db.fetchone("SELECT * FROM quests WHERE guild_id=? AND quest_id=? AND active=1", (gid, quest_id))
         if not q:
-            return await interaction.followup.send("Quest not found.", ephemeral=True)
+            embed = create_embed("Quest not found.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         q = dict(q)
         run = await self._get_or_create_quest_run(gid, quest_id, interaction.user.id)
         if run["status"] in ("claimed",):
-            return await interaction.followup.send("You already claimed this quest.", ephemeral=True)
+            embed = create_embed("You already claimed this quest.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         req = json.loads(q["requirement_json"])
         ok, detail = await self._quest_check_completion(
@@ -741,16 +764,19 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         q = await self.bot.db.fetchone("SELECT * FROM quests WHERE guild_id=? AND quest_id=? AND active=1", (gid, quest_id))
         if not q:
-            return await interaction.followup.send("Quest not found.", ephemeral=True)
+            embed = create_embed("Quest not found.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
         q = dict(q)
 
         run = await self._get_or_create_quest_run(gid, quest_id, interaction.user.id)
         if run["status"] == "claimed":
-            return await interaction.followup.send("Already claimed.", ephemeral=True)
+            embed = create_embed("Already claimed.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Check completion
         req = json.loads(q["requirement_json"])
@@ -758,8 +784,10 @@ class EventSystem(commands.Cog):
         if not ok:
             # manual quests route to inbox (optional)
             if req.get("type") == "manual":
-                return await interaction.followup.send("This quest requires manual proof.", ephemeral=True)
-            return await interaction.followup.send(f"Not complete yet: {detail}", ephemeral=True)
+                embed = create_embed("This quest requires manual proof.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+            embed = create_embed(f"Not complete yet: {detail}", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # rewards
         reward = json.loads(q["reward_json"] or "{}")
@@ -798,11 +826,13 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         wrapper = await self._active_wrapper(gid)
         if not wrapper:
-            return await interaction.followup.send("No active season/holiday to reroll quests in.", ephemeral=True)
+            embed = create_embed("No active season/holiday to reroll quests in.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         scope_id = int(wrapper["event_id"])
         cfg = json.loads(wrapper["config_json"])
@@ -815,7 +845,8 @@ class EventSystem(commands.Cog):
             (gid, scope_id)
         )
         if not dailies or len(dailies) < 2:
-            return await interaction.followup.send("Not enough daily quests to reroll.", ephemeral=True)
+            embed = create_embed("Not enough daily quests to reroll.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Find a daily quest the user hasn't already claimed/rerolled
         # Pick the first eligible as "current"
@@ -829,7 +860,8 @@ class EventSystem(commands.Cog):
                 current = int(q["quest_id"])
                 break
         if current is None:
-            return await interaction.followup.send("You've already cleared today's dailies.", ephemeral=True)
+            embed = create_embed("You've already cleared today's dailies.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Pay cost: tokens preferred, else coins
         tokens_have = await self._get_user_tokens(gid, interaction.user.id, scope_id)
@@ -903,17 +935,20 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid or not interaction.guild:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         holiday_id = holiday_id.lower().strip()
         config = get_holiday_config(holiday_id)
         if not config:
-            return await interaction.followup.send(f"Invalid holiday ID. Use: valentines_week, easter_week, midsummer_week, harvest_week, halloween_week, christmas_week", ephemeral=True)
+            embed = create_embed(f"Invalid holiday ID. Use: valentines_week, easter_week, midsummer_week, harvest_week, halloween_week, christmas_week", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Check for existing active wrapper
         existing = await self._active_wrapper(gid)
         if existing and existing.get("type") == "holiday_week":
-            return await interaction.followup.send(f"A holiday week is already active: {existing['name']}", ephemeral=True)
+            embed = create_embed(f"A holiday week is already active: {existing['name']}", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Calculate dates
         if start_date:
@@ -921,7 +956,8 @@ class EventSystem(commands.Cog):
                 start_dt = datetime.strptime(start_date, "%Y-%m-%d")
                 start_dt = start_dt.replace(hour=0, minute=0, second=0, tzinfo=UK_TZ)
             except ValueError:
-                return await interaction.followup.send("Invalid date format. Use YYYY-MM-DD", ephemeral=True)
+                embed = create_embed("Invalid date format. Use YYYY-MM-DD", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
         else:
             start_dt = uk_now().replace(hour=0, minute=0, second=0)
 
@@ -973,7 +1009,8 @@ class EventSystem(commands.Cog):
             e = self._embed("Holiday Week Started", desc, thumb_url=thumb)
             await orders_ch.send(embed=e)
 
-        await interaction.followup.send(f"Holiday week **{config['name']}** started.", ephemeral=True)
+        embed = create_embed(f"Holiday week **{config['name']}** started.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="event_start_season", description="(Staff) Start a seasonal event (spring/summer/autumn/winter).")
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -982,26 +1019,31 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid or not interaction.guild:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         season = season.lower().strip()
         config = get_seasonal_config(season)
         if not config:
-            return await interaction.followup.send(f"Invalid season. Use: spring, summer, autumn, or winter.", ephemeral=True)
+            embed = create_embed(f"Invalid season. Use: spring, summer, autumn, or winter.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Check for existing active season
         existing = await self._active_wrapper(gid)
         if existing:
-            return await interaction.followup.send(f"A season/holiday is already active: {existing['name']}", ephemeral=True)
+            embed = create_embed(f"A season/holiday is already active: {existing['name']}", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Calculate dates
         from datetime import datetime
+from utils.embed_utils import create_embed
         if start_date:
             try:
                 start_dt = datetime.strptime(start_date, "%Y-%m-%d")
                 start_dt = start_dt.replace(hour=0, minute=0, second=0, tzinfo=UK_TZ)
             except ValueError:
-                return await interaction.followup.send("Invalid date format. Use YYYY-MM-DD", ephemeral=True)
+                embed = create_embed("Invalid date format. Use YYYY-MM-DD", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
         else:
             start_dt = uk_now().replace(hour=0, minute=0, second=0)
 
@@ -1048,7 +1090,8 @@ class EventSystem(commands.Cog):
             e = self._embed("Season Started", desc, thumb_url=thumb)
             await orders_ch.send(embed=e)
 
-        await interaction.followup.send(f"Season **{config['name']}** started. Finale will trigger automatically in week {config['finale_week']}.", ephemeral=True)
+        embed = create_embed(f"Season **{config['name']}** started. Finale will trigger automatically in week {config['finale_week']}.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="event_start_boss", description="(Staff) Start a boss fight event.")
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -1056,12 +1099,14 @@ class EventSystem(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid or not interaction.guild:
-            return await interaction.followup.send("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # prevent double boss
         existing = await self._active_boss(gid)
         if existing:
-            return await interaction.followup.send("A boss fight is already active.", ephemeral=True)
+            embed = create_embed("A boss fight is already active.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         eid = await self._next_event_id(gid)
         start = now_ts()
@@ -1111,7 +1156,8 @@ class EventSystem(commands.Cog):
             e = self._embed("Boss Fight", desc, thumb_url=thumb)
             await orders_ch.send(embed=e)
 
-        await interaction.followup.send(f"Boss started: `{eid}`", ephemeral=True)
+        embed = create_embed(f"Boss started: `{eid}`", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     # =========================================================
     #  Scheduler 1: Activate scheduled events, end expired
@@ -1664,7 +1710,9 @@ class EventSystem(commands.Cog):
                     if victory_line:
                         desc = victory_line + "\n\n" + desc
                 
+                # Spotlight post is a system message (sent to channel, includes author)
                 e = self._embed(None, desc + "\n᲼᲼", thumb_url=thumb)
+                # _embed already includes author, so this is correct for system messages
                 await spotlight.send(content=pings, embed=e)
 
         # Process seasonal finale victory rewards (badges, roles, private DMs)
@@ -1788,7 +1836,9 @@ class EventSystem(commands.Cog):
                             if lines:
                                 try:
                                     line = random.choice(lines)
-                                    await member.send(sanitize_isla_text(line))
+                                    from utils.embed_utils import create_embed
+                                    embed = create_embed(sanitize_isla_text(line), color="system", is_dm=True, is_system=False)
+                                    await member.send(embed=embed)
                                 except Exception:
                                     pass
 

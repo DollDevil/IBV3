@@ -127,7 +127,8 @@ class DisciplineGroup(commands.Cog):
         gid = interaction.guild_id
         uid = interaction.user.id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         rows = await self.bot.db.fetchall(
             """
@@ -167,7 +168,8 @@ class DisciplineGroup(commands.Cog):
         gid = interaction.guild_id
         uid = interaction.user.id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self._ensure_debt(gid, uid)
         d = await self.bot.db.fetchone(
@@ -196,7 +198,8 @@ class DisciplineGroup(commands.Cog):
         gid = interaction.guild_id
         uid = interaction.user.id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         await self._ensure_debt(gid, uid)
         d = await self.bot.db.fetchone("SELECT debt FROM discipline_debt WHERE guild_id=? AND user_id=?", (gid, uid))
@@ -235,7 +238,8 @@ class DisciplineGroup(commands.Cog):
 
     async def _require_mod(self, interaction: discord.Interaction) -> bool:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return False
         if not self._is_mod(interaction.user):
             await interaction.response.send_message(embed=isla_embed("Not for you.\n᲼᲼", title="Discipline"), ephemeral=True)
@@ -375,6 +379,7 @@ class DisciplineGroup(commands.Cog):
         # Apply timeout
         try:
             from datetime import timedelta
+from utils.embed_utils import create_embed
             until = discord.utils.utcnow() + timedelta(seconds=seconds)
             await user.timeout(until, reason=reason or "discipline timeout")
         except Exception:

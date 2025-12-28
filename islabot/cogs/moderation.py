@@ -6,6 +6,7 @@ from discord import app_commands
 
 from core.utils import now_ts, now_local
 from core.isla_text import sanitize_isla_text
+from utils.embed_utils import create_embed
 
 
 def week_key_uk() -> str:
@@ -71,45 +72,54 @@ class Moderation(commands.Cog):
     @app_commands.checks.has_permissions(manage_messages=True)
     async def purge(self, interaction: discord.Interaction, amount: int):
         if not interaction.channel or not isinstance(interaction.channel, discord.TextChannel):
-            return await interaction.response.send_message("Use this in a text channel.", ephemeral=True)
+            embed = create_embed("Use this in a text channel.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         amount = max(1, min(200, amount))
         await interaction.response.defer(ephemeral=True)
         deleted = await interaction.channel.purge(limit=amount)
-        await interaction.followup.send(f"Deleted {len(deleted)} messages.", ephemeral=True)
+        embed = create_embed(f"Deleted {len(deleted)} messages.", color="success", is_dm=False, is_system=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="slowmode", description="Set slowmode for this channel (seconds).")
     @app_commands.checks.has_permissions(manage_channels=True)
     async def slowmode(self, interaction: discord.Interaction, seconds: int):
         if not interaction.channel or not isinstance(interaction.channel, discord.TextChannel):
-            return await interaction.response.send_message("Use this in a text channel.", ephemeral=True)
+            embed = create_embed("Use this in a text channel.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         seconds = max(0, min(21600, seconds))
         await interaction.channel.edit(slowmode_delay=seconds)
-        await interaction.response.send_message(f"Slowmode set to {seconds}s.", ephemeral=True)
+        embed = create_embed(f"Slowmode set to {seconds}s.", color="success", is_dm=False, is_system=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="lockdown", description="Toggle lockdown for this channel (send messages).")
     @app_commands.checks.has_permissions(manage_channels=True)
     async def lockdown(self, interaction: discord.Interaction, enabled: bool):
         if not interaction.channel or not isinstance(interaction.channel, discord.TextChannel):
-            return await interaction.response.send_message("Use this in a text channel.", ephemeral=True)
+            embed = create_embed("Use this in a text channel.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         ch: discord.TextChannel = interaction.channel
         overwrite = ch.overwrites_for(interaction.guild.default_role)
         overwrite.send_messages = (False if enabled else None)
         await ch.set_permissions(interaction.guild.default_role, overwrite=overwrite)
-        await interaction.response.send_message(f"Lockdown {'enabled' if enabled else 'disabled'}.", ephemeral=True)
+        embed = create_embed(f"Lockdown {'enabled' if enabled else 'disabled'}.", color="success", is_dm=False, is_system=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
     @app_commands.command(name="dev_reload_personality", description="(Admin) Reload personality.json now.")
     @app_commands.checks.has_permissions(administrator=True)
     async def dev_reload_personality(self, interaction: discord.Interaction):
         if not interaction.guild:
-            await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         if not hasattr(self.bot, "personality"):
-            await interaction.followup.send("Personality system not initialized.", ephemeral=True)
+            embed = create_embed("Personality system not initialized.", color="error", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         ok, msg = self.bot.personality.load()
         self.bot.personality.sanitize()
-        await interaction.followup.send(f"Reload: {msg}", ephemeral=True)
+        embed = create_embed(f"Reload: {msg}", color="success" if ok else "error", is_dm=False, is_system=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):

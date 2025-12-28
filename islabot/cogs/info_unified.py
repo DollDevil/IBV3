@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from utils.info_embed import info_embed
+from utils.embed_utils import create_embed
 
 # Keep the titles short and the descriptions clear.
 INFO_TOPICS: dict[str, dict] = {

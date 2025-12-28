@@ -7,6 +7,7 @@ from discord import app_commands
 from core.utils import now_local
 from core.isla_text import sanitize_isla_text
 from utils.helpers import now_ts, format_time_left, isla_embed as helper_isla_embed, ensure_user_row
+from utils.embed_utils import create_embed
 
 REMINDER_AFTER_SECONDS = 48 * 3600  # 48 hours
 REMINDER_COOLDOWN_SECONDS = 24 * 3600  # 24 hours (don't nag more than once/day)
@@ -134,12 +135,14 @@ class PronounSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         guild = interaction.guild
         if not guild:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         choice = self.values[0]
         member = interaction.user if isinstance(interaction.user, discord.Member) else guild.get_member(interaction.user.id)
         if not member:
-            return await interaction.response.send_message("Member not found.", ephemeral=True)
+            embed = create_embed("Member not found.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         # remove all pronoun roles first
         to_remove = []
@@ -164,7 +167,8 @@ class PronounSelect(discord.ui.Select):
                     except discord.Forbidden:
                         pass
 
-        await interaction.response.send_message("Noted.", ephemeral=True)
+        embed = create_embed("Noted.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class OnboardingView(discord.ui.View):
@@ -338,15 +342,12 @@ class Onboarding(commands.Cog):
         rules_channel_mention = f"<#{self.rules_channel_id}>" if self.rules_channel_id else "#rules"
         roles_channel_mention = f"<#{self.roles_channel_id}>" if self.roles_channel_id else "#roles"
         
-        # Create welcome embed
-        embed = discord.Embed(
+        # Create welcome embed (system message - includes author)
+        embed = create_embed(
             description=f"Welcome to Isla://domain {member.mention}\n᲼᲼",
-            colour=0x65566c
-        )
-        
-        embed.set_author(
-            name="System Message",
-            icon_url="https://i.imgur.com/irmCXhw.gif"
+            color=0x65566c,
+            is_dm=False,
+            is_system=True  # System message - includes author
         )
         
         embed.add_field(
@@ -384,11 +385,13 @@ class Onboarding(commands.Cog):
     async def handle_accept_rules(self, interaction: discord.Interaction):
         guild = interaction.guild
         if not guild:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         member = interaction.user if isinstance(interaction.user, discord.Member) else guild.get_member(interaction.user.id)
         if not member:
-            return await interaction.response.send_message("Member not found.", ephemeral=True)
+            embed = create_embed("Member not found.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         verified = guild.get_role(self.role_verified_id) if self.role_verified_id else None
         unv = guild.get_role(self.role_unverified_id) if self.role_unverified_id else None
@@ -420,7 +423,7 @@ class Onboarding(commands.Cog):
         try:
             roles_mention = "#roles"  # You can add config for this if needed
             intro_mention = f"<#{self.intro_channel_id}>" if self.intro_channel_id else "#introductions"
-            e = isla_embed(AFTER_RULES_DM["description"], title=AFTER_RULES_DM["title"])
+            e = create_embed(AFTER_RULES_DM["description"], title=AFTER_RULES_DM["title"], color="system", is_dm=True, is_system=False)
             # Replace placeholders in fields
             for n, v in AFTER_RULES_DM["fields"]:
                 v_processed = v.replace("#roles", roles_mention).replace("#introductions", intro_mention)
@@ -433,7 +436,8 @@ class Onboarding(commands.Cog):
     async def handle_how_to_start(self, interaction: discord.Interaction):
         guild = interaction.guild
         if not guild:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         intro_ch_mention = f"<#{self.intro_channel_id}>" if self.intro_channel_id else "#introductions"
         spam_ch_mention = f"<#{self.spam_channel_id}>" if self.spam_channel_id else "#spam"
         desc = (
@@ -462,7 +466,8 @@ class Onboarding(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         guild = interaction.guild
         if not guild:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         verified_role = guild.get_role(self.role_verified_id) if self.role_verified_id else None
         member = interaction.user if isinstance(interaction.user, discord.Member) else guild.get_member(interaction.user.id)
@@ -495,7 +500,8 @@ class Onboarding(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         await ensure_user_row(self.bot.db, gid, interaction.user.id)
 
@@ -530,20 +536,24 @@ class Onboarding(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         row = await self.bot.db.fetchone(
             "SELECT token, expires_ts FROM optout_confirm WHERE guild_id=? AND user_id=?",
             (gid, interaction.user.id)
         )
         if not row:
-            return await interaction.followup.send("No active opt-out request. Use /opt-out first.", ephemeral=True)
+            embed = create_embed("No active opt-out request. Use /opt-out first.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         if now_ts() > int(row["expires_ts"]):
-            return await interaction.followup.send("That token expired. Use /opt-out again.", ephemeral=True)
+            embed = create_embed("That token expired. Use /opt-out again.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         if token.strip().upper() != str(row["token"]).upper():
-            return await interaction.followup.send("Wrong token.", ephemeral=True)
+            embed = create_embed("Wrong token.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # reset + disable
         await self.bot.db.execute(
@@ -582,7 +592,8 @@ class Onboarding(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         await ensure_user_row(self.bot.db, gid, interaction.user.id)
         await self.bot.db.execute(
@@ -598,7 +609,8 @@ class Onboarding(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         await ensure_user_row(self.bot.db, gid, interaction.user.id)
 
@@ -694,7 +706,8 @@ class Onboarding(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         await ensure_user_row(self.bot.db, gid, interaction.user.id)
 
@@ -788,10 +801,10 @@ class Onboarding(commands.Cog):
                     )
                     continue
 
-                # Compose reminder (updated text)
+                # Compose reminder (updated text) - DM message
                 rules_mention = f"<#{self.rules_channel_id}>" if self.rules_channel_id else "#rules"
                 desc = REMINDER_48H_DM["description"].replace("#rules", rules_mention)
-                e = isla_embed(desc, title=REMINDER_48H_DM["title"])
+                e = create_embed(desc, title=REMINDER_48H_DM["title"], color="system", is_dm=True, is_system=False)
                 e.set_footer(text=REMINDER_48H_DM["footer"])
 
                 # Try DM first
@@ -802,10 +815,13 @@ class Onboarding(commands.Cog):
                 except discord.Forbidden:
                     sent = False
 
-                # Fallback: #welcome ping (spoiler mention to avoid visual spam)
+                # Fallback: #welcome ping (spoiler mention to avoid visual spam) - System message
                 if not sent and welcome:
                     ping = f"||<@{uid}>||"
-                    await welcome.send(content=ping, embed=e, view=self.view)
+                    # Fallback is a system message (sent to channel)
+                    e_fallback = create_embed(desc, title=REMINDER_48H_DM["title"], color="system", is_dm=False, is_system=True)
+                    e_fallback.set_footer(text=REMINDER_48H_DM["footer"])
+                    await welcome.send(content=ping, embed=e_fallback, view=self.view)
 
                 await self.bot.db.execute(
                     "UPDATE onboarding_state SET last_reminder_ts=? WHERE guild_id=? AND user_id=?",
@@ -840,7 +856,8 @@ class StaffControls(app_commands.Group):
     @app_commands.describe(member="Target", days="Days (1–30)", bypass_locks="Ignore anti-abuse locks")
     async def vacation_set(self, interaction: discord.Interaction, member: discord.Member, days: int, bypass_locks: bool = True):
         if not staff_check(interaction):
-            return await interaction.response.send_message("No.", ephemeral=True)
+            embed = create_embed("No.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
@@ -875,7 +892,8 @@ class StaffControls(app_commands.Group):
     @app_commands.describe(member="Target", start_cooldown="Start the 24h cooldown")
     async def vacation_clear(self, interaction: discord.Interaction, member: discord.Member, start_cooldown: bool = True):
         if not staff_check(interaction):
-            return await interaction.response.send_message("No.", ephemeral=True)
+            embed = create_embed("No.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
@@ -905,7 +923,8 @@ class StaffControls(app_commands.Group):
     @app_commands.describe(member="Target")
     async def vacation_cooldown_clear(self, interaction: discord.Interaction, member: discord.Member):
         if not staff_check(interaction):
-            return await interaction.response.send_message("No.", ephemeral=True)
+            embed = create_embed("No.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
@@ -930,7 +949,8 @@ class StaffControls(app_commands.Group):
     @app_commands.describe(member="Target", enabled="Enable or disable safeword")
     async def safeword_set(self, interaction: discord.Interaction, member: discord.Member, enabled: bool):
         if not staff_check(interaction):
-            return await interaction.response.send_message("No.", ephemeral=True)
+            embed = create_embed("No.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
@@ -944,6 +964,7 @@ class StaffControls(app_commands.Group):
         )
 
         import json
+from utils.embed_utils import create_embed
         await self.cog.bot.db.execute(
             "INSERT INTO staff_actions(guild_id,staff_id,user_id,action,meta_json,ts) VALUES(?,?,?,?,?,?)",
             (gid, interaction.user.id, member.id, "safeword_set", json.dumps({"enabled": enabled}), now)
@@ -962,17 +983,20 @@ class StaffControls(app_commands.Group):
     @app_commands.describe(member="Member to test with (defaults to you)")
     async def test_welcome(self, interaction: discord.Interaction, member: discord.Member | None = None):
         if not staff_check(interaction):
-            return await interaction.response.send_message("No.", ephemeral=True)
+            embed = create_embed("No.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         
         if not interaction.guild:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         
         await interaction.response.defer(ephemeral=True)
         
         # Use provided member or the command user
         test_member = member if member else (interaction.user if isinstance(interaction.user, discord.Member) else None)
         if not test_member:
-            return await interaction.followup.send("Could not get member.", ephemeral=True)
+            embed = create_embed("Could not get member.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
         
         # Get welcome channel
         welcome_channel_id = int(self.cog.bot.cfg.get("channels", "welcome", default=0) or 0)
@@ -991,15 +1015,12 @@ class StaffControls(app_commands.Group):
         rules_channel_mention = f"<#{rules_channel_id}>" if rules_channel_id else "#rules"
         roles_channel_mention = f"<#{roles_channel_id}>" if roles_channel_id else "#roles"
         
-        # Create welcome embed
-        embed = discord.Embed(
+        # Create welcome embed (system message - includes author)
+        embed = create_embed(
             description=f"Welcome to Isla://domain {test_member.mention}\n᲼᲼",
-            colour=0x65566c
-        )
-        
-        embed.set_author(
-            name="System Message",
-            icon_url="https://i.imgur.com/irmCXhw.gif"
+            color=0x65566c,
+            is_dm=False,
+            is_system=True  # System message - includes author
         )
         
         embed.add_field(
@@ -1033,13 +1054,15 @@ class StaffControls(app_commands.Group):
         
         ping = f"||{test_member.mention}||"
         await welcome.send(content=ping, embed=embed)
-        await interaction.followup.send(f"Test welcome message sent in {welcome.mention}!", ephemeral=True)
+        response_embed = create_embed(f"Test welcome message sent in {welcome.mention}!", color="info", is_dm=False, is_system=False)
+        await interaction.followup.send(embed=response_embed, ephemeral=True)
 
     @app_commands.command(name="safeword_status", description="View a user's safeword status (staff).")
     @app_commands.describe(member="Target")
     async def safeword_status_staff(self, interaction: discord.Interaction, member: discord.Member):
         if not staff_check(interaction):
-            return await interaction.response.send_message("No.", ephemeral=True)
+            embed = create_embed("No.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id

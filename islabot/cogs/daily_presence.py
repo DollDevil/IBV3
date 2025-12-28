@@ -9,6 +9,7 @@ from discord.ext import commands, tasks
 
 from core.utils import now_ts, now_local
 from core.isla_text import sanitize_isla_text
+from utils.embed_utils import create_embed
 
 # Simple author+description embed only (no pings)
 def simple_embed(desc: str, icon: str) -> discord.Embed:

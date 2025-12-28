@@ -4,6 +4,7 @@ from discord.ext import commands, tasks
 
 from core.utils import now_ts
 from utils.helpers import isla_embed
+from utils.embed_utils import create_embed
 
 class VacationWatch(commands.Cog):
     def __init__(self, bot: commands.Bot):

@@ -6,6 +6,7 @@ from discord import app_commands
 from core.utils import fmt, now_ts
 from core.isla_text import sanitize_isla_text
 from utils.helpers import isla_embed as helper_isla_embed
+from utils.embed_utils import create_embed
 
 def vacation_badge(vac_until: int, vac_last_used: int) -> str:
     """Returns vacation status badge text."""
@@ -50,7 +51,8 @@ class Profile(commands.Cog):
     @app_commands.command(name="profile", description="Show a user's profile.")
     async def profile(self, interaction: discord.Interaction, user: discord.Member | None = None):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
         user = user or interaction.user
         row = await self.bot.db.fetchone(
@@ -58,7 +60,8 @@ class Profile(commands.Cog):
             (gid, user.id)
         )
         if not row:
-            return await interaction.response.send_message("No data yet.", ephemeral=True)
+            embed = create_embed("No data yet.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         coins = int(row["coins"])
         obedience = int(row["obedience"])
@@ -126,7 +129,8 @@ class Profile(commands.Cog):
     @app_commands.describe(stat="coins|obedience|xp|lce")
     async def leaderboard(self, interaction: discord.Interaction, stat: str = "obedience"):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
         stat = stat.lower().strip()
         if stat not in ("coins", "obedience", "xp", "lce"):
@@ -137,7 +141,8 @@ class Profile(commands.Cog):
             (gid,)
         )
         if not rows:
-            return await interaction.response.send_message("No data.", ephemeral=True)
+            embed = create_embed("No data.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         lines = []
         for i, r in enumerate(rows, start=1):

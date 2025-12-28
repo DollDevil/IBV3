@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from core.utils import now_ts
+from utils.embed_utils import create_embed
 
 class Privacy(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -12,7 +13,8 @@ class Privacy(commands.Cog):
     @app_commands.command(name="optout", description="Hard leave Isla system: deletes your data and stops tracking.")
     async def optout(self, interaction: discord.Interaction):
         if not interaction.guild:
-            await interaction.response.send_message("Guild only.", ephemeral=True)
+            embed = create_embed("Guild only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         gid, uid = interaction.guild.id, interaction.user.id
@@ -34,7 +36,8 @@ class Privacy(commands.Cog):
     @app_commands.command(name="optin", description="Re-join Isla system after opting out.")
     async def optin(self, interaction: discord.Interaction):
         if not interaction.guild:
-            await interaction.response.send_message("Guild only.", ephemeral=True)
+            embed = create_embed("Guild only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         gid, uid = interaction.guild.id, interaction.user.id
@@ -43,7 +46,8 @@ class Privacy(commands.Cog):
         await self.bot.db.ensure_user(gid, uid)
         await self.bot.db.audit(gid, uid, uid, "optin", "{}", now_ts())
 
-        await interaction.followup.send("Opt-in complete. You're back in the system.", ephemeral=True)
+        embed = create_embed("Opt-in complete. You're back in the system.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Privacy(bot))

@@ -13,6 +13,7 @@ import math
 import discord
 from discord.ext import commands, tasks
 from utils.uk_time import uk_day_ymd, uk_hm
+from utils.embed_utils import create_embed
 
 # Boss tick timing
 FLUSH_EVERY_SECONDS = 60

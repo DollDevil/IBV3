@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 from core.utils import now_ts, now_local, fmt
 from core.isla_text import sanitize_isla_text
+from utils.embed_utils import create_embed
 
 UK_TZ = ZoneInfo("Europe/London")
 
@@ -162,7 +163,17 @@ class CasinoDailyRecap(commands.Cog):
         lines.append(closer)
         lines.append("᲼᲼")
 
-        await ch.send(content=pings, embed=casino_embed("\n".join(lines), self.icon))
+        # Daily recap is a system message (sent to channel, includes author)
+        from utils.embed_utils import create_embed
+        from core.isla_text import sanitize_isla_text
+        embed = create_embed(
+            description=sanitize_isla_text("\n".join(lines)),
+            color="casino",
+            thumbnail=random.choice(CASINO_THUMBS),
+            is_dm=False,
+            is_system=True  # System message - includes author
+        )
+        await ch.send(content=pings, embed=embed)
 
     @tasks.loop(time=time(hour=21, minute=15, tzinfo=UK_TZ))  # daily evening recap UK
     async def recap_loop(self):

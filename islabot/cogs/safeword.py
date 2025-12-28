@@ -5,6 +5,7 @@ from discord import app_commands
 
 from core.utils import now_ts
 from utils.helpers import isla_embed, ensure_user_row
+from utils.embed_utils import create_embed
 
 class Safeword(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -16,7 +17,8 @@ class Safeword(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         await ensure_user_row(self.bot.db, gid, interaction.user.id)
 
@@ -69,7 +71,8 @@ class Safeword(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         await ensure_user_row(self.bot.db, gid, interaction.user.id)
         row = await self.bot.db.fetchone(

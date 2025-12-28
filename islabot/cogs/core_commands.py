@@ -4,6 +4,7 @@ import time
 import discord
 from discord.ext import commands
 from discord import app_commands
+from utils.embed_utils import create_embed
 
 def isla_embed(title: str, desc: str, color: int = 0x673AB7) -> discord.Embed:
     """Create an Isla embed with title, description, and optional color."""
@@ -203,12 +204,58 @@ class CoreCommands(commands.Cog):
         await interaction.followup.send(embed=e, ephemeral=True)
 
     # -------------------------
+    # /rules
+    # -------------------------
+    @app_commands.command(name="rules", description="View the server rules.")
+    async def rules(self, interaction: discord.Interaction):
+        if not interaction.guild or not interaction.channel:
+            embed = create_embed("Use this command in a server channel.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        
+        # Create rules embed (system message - includes author)
+        embed = create_embed(
+            description="Please read the rules.\n᲼᲼",
+            color=0x65566c,
+            is_dm=False,
+            is_system=True  # System message - includes author
+        )
+        
+        # Override author name to match exact specification
+        embed.set_author(
+            name="𝚂𝚢𝚜𝚝𝚎𝚖 𝙼𝚎𝚜𝚜𝚊𝚐𝚎",
+            icon_url="https://i.imgur.com/irmCXhw.gif"
+        )
+        
+        embed.add_field(
+            name="<a:redbook:1454436043339333735> Rules",
+            value="> - 1. **Respect the Pperator.**\n> ᲼᲼\n> ᲼᲼\n> - 2. **Stay On-Topic.**\n> ᲼᲼\n> ᲼᲼\n> - 3. **No Spam or Flooding.**\n> ᲼᲼\n> ᲼᲼\n> - 4. **No Spoilers.**\n> ᲼᲼\n> ᲼᲼\n> - 5. <:dmsoff:1454433182890987602> **Do Not DM Isla.**\n> ᲼᲼",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="᲼᲼",
+            value="-# > *Harassment, hate speech or disrespect will be terminated on sight.*\n-# > ᲼᲼\n-# > *By using the right channels we keep the system clean.*\n-# > ᲼᲼\n-# > *This includes mass pings, ads, or self-promotion.*\n-# > ᲼᲼\n-# > *Do not spoil Isla's programs — allows everyone to experience them themselves.*\n-# > ᲼᲼\n-# > *To DM Isla each member must pay a fee beforehand.*\n-# > ᲼᲼",
+            inline=True
+        )
+        
+        embed.set_footer(
+            text="Having issues? Type /support",
+            icon_url="https://i.imgur.com/irmCXhw.gif"
+        )
+        
+        # Send to channel (public, not ephemeral) so everyone can see the rules
+        await interaction.response.defer()
+        await interaction.followup.send(embed=embed)
+
+    # -------------------------
     # /status (PUBLIC-SAFE)
     # -------------------------
     @app_commands.command(name="status", description="See active modules and event status (public-safe).")
     async def status(self, interaction: discord.Interaction):
         if not interaction.guild:
-            await interaction.response.send_message("Guild only.", ephemeral=True)
+            embed = create_embed("Guild only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)

@@ -20,6 +20,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from utils.uk_time import uk_day_ymd
+from utils.embed_utils import create_embed
 
 VC_REDUCED_MULT = 0.35
 
@@ -120,7 +121,8 @@ class EventGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         ev = await self._pick_current_event(gid)
         if not ev:
@@ -157,7 +159,8 @@ class EventGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         ev = await self._pick_current_event(gid)
         if not ev:
@@ -250,7 +253,8 @@ class EventGroup(commands.Cog):
         gid = interaction.guild_id
         uid = interaction.user.id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         ev = await self._pick_current_event(gid)
         if not ev:
@@ -323,7 +327,8 @@ class EventGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         ev = await self._pick_current_event(gid)
         if not ev:
@@ -378,7 +383,8 @@ class EventGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         ev = await self._pick_current_event(gid)
         if not ev:
@@ -399,7 +405,8 @@ class EventGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         ev = await self._pick_current_event(gid)
         if not ev:

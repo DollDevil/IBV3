@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 
 from core.utils import now_ts, now_local, fmt
 from core.isla_text import sanitize_isla_text
+from utils.embed_utils import create_embed
+from utils.embed_utils import create_embed
 
 UK_TZ = ZoneInfo("Europe/London")
 
@@ -27,10 +29,14 @@ ROLE_NAMES = [
 
 
 def casino_embed(desc: str, icon: str) -> discord.Embed:
-    e = discord.Embed(description=sanitize_isla_text(desc))
-    e.set_author(name="Isla", icon_url=icon)
-    e.set_thumbnail(url=CASINO_THUMBS[int(now_ts()) % len(CASINO_THUMBS)])
-    return e
+    """Create a casino embed (for DMs, includes author)."""
+    return create_embed(
+        description=sanitize_isla_text(desc),
+        color="casino",
+        thumbnail=CASINO_THUMBS[int(now_ts()) % len(CASINO_THUMBS)],
+        is_dm=True,  # Used for DMs
+        is_system=False
+    )
 
 
 def prev_week_key_uk() -> str:
@@ -173,7 +179,15 @@ class CasinoRoyalty(commands.Cog):
             + f"\n\n{random_choice(closer)}\n᲼᲼"
         )
 
-        await ch.send(content=pings, embed=casino_embed(desc, self.icon))
+        # Spotlight post is a system message (sent to channel, includes author)
+        embed = create_embed(
+            description=sanitize_isla_text(desc),
+            color="casino",
+            thumbnail=CASINO_THUMBS[int(now_ts()) % len(CASINO_THUMBS)],
+            is_dm=False,
+            is_system=True  # System message - includes author
+        )
+        await ch.send(content=pings, embed=embed)
 
     @tasks.loop(time=time(hour=12, minute=10, tzinfo=UK_TZ))  # Monday midday-ish UK
     async def weekly_awards(self):

@@ -6,6 +6,7 @@ from discord import app_commands
 from utils.isla_style import isla_embed, fmt
 from utils.uk_parse import parse_when_to_ts, human_eta, now_ts
 from utils.economy import ensure_wallet, get_wallet, add_coins
+from utils.embed_utils import create_embed
 
 class EventCreateModal(discord.ui.Modal, title="Create Event"):
     title_in = discord.ui.TextInput(label="Title", max_length=80)
@@ -22,7 +23,8 @@ class EventCreateModal(discord.ui.Modal, title="Create Event"):
     async def on_submit(self, interaction: discord.Interaction):
         gid = interaction.guild_id
         if not gid:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         start_ts = parse_when_to_ts(str(self.start_in.value))
         if start_ts <= now_ts():
@@ -81,7 +83,8 @@ class CustomEventsGroup(commands.Cog):
     @app_commands.command(name="create", description="Interactive event wizard.")
     async def create(self, interaction: discord.Interaction):
         if not interaction.guild_id or not interaction.guild:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         if not isinstance(interaction.user, discord.Member) or not self._is_mod(interaction.user):
             return await interaction.response.send_message(embed=isla_embed("Not for you.\n᲼᲼", title="Event"), ephemeral=True)
 
@@ -93,7 +96,8 @@ class CustomEventsGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         rows = await self.bot.db.fetchall(
             """
@@ -124,7 +128,8 @@ class CustomEventsGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid or not interaction.guild:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         ev = await self.bot.db.fetchone(
             "SELECT title,start_ts,channel_id,role_id,entry_cost,active FROM events_custom WHERE guild_id=? AND event_id=?",
@@ -179,7 +184,8 @@ class CustomEventsGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid or not interaction.guild:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         ev = await self.bot.db.fetchone(
             "SELECT role_id,active FROM events_custom WHERE guild_id=? AND event_id=?",

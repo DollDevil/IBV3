@@ -67,7 +67,8 @@ class CoinsGroup(commands.Cog):
     async def balance(self, interaction: discord.Interaction, user: discord.Member | None = None):
         await interaction.response.defer(ephemeral=True)
         if not interaction.guild_id:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         target = user or interaction.user
         gid = interaction.guild_id
@@ -95,7 +96,8 @@ class CoinsGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         uid = interaction.user.id
         today = uk_day_ymd(now_ts())
@@ -116,6 +118,7 @@ class CoinsGroup(commands.Cog):
 
         from datetime import datetime, timedelta
         from zoneinfo import ZoneInfo
+from utils.embed_utils import create_embed
         UK = ZoneInfo("Europe/London")
         dt_today = datetime.fromisoformat(today).replace(tzinfo=UK).date()
         try:
@@ -150,7 +153,8 @@ class CoinsGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         uid = interaction.user.id
         wk = iso_week_key()
@@ -197,7 +201,8 @@ class CoinsGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         if user.bot:
             return await interaction.followup.send(embed=isla_embed("Not a bot.\n᲼᲼", title="Pay"), ephemeral=True)
@@ -240,7 +245,8 @@ class CoinsGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         tf = timeframe.lower().strip()
         now = now_ts()
@@ -309,7 +315,8 @@ class CoinsGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         uid = interaction.user.id
         if amount <= 0:
@@ -335,7 +342,8 @@ class CoinsGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         uid = interaction.user.id
         w = await get_wallet(self.bot.db, gid, uid)
@@ -358,7 +366,8 @@ class CoinsGroup(commands.Cog):
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild_id
         if not gid:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         target = user or interaction.user
         uid = target.id

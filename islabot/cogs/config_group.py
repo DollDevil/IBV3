@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 
-from utils.isla_style import isla_embed
+from utils.embed_utils import create_embed
 from utils.guild_config import cfg_set, cfg_get
 from utils.uk_parse import parse_duration_to_seconds
 
@@ -25,7 +25,8 @@ class RolesModal(discord.ui.Modal, title="Config: Roles"):
     async def on_submit(self, interaction: discord.Interaction):
         gid = interaction.guild_id
         if not gid:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await cfg_set(self.bot.db, gid, "roles.verified18", self.role_18.value.strip())
         await cfg_set(self.bot.db, gid, "roles.consent", self.consent.value.strip())
@@ -33,7 +34,8 @@ class RolesModal(discord.ui.Modal, title="Config: Roles"):
         await cfg_set(self.bot.db, gid, "roles.punishment", self.punish.value.strip())
         await cfg_set(self.bot.db, gid, "roles.ranks", self.ranks.value.strip())
 
-        await interaction.response.send_message(embed=isla_embed("Saved.\n᲼᲼", title="Config Roles"), ephemeral=True)
+        embed = create_embed("Saved.\n᲼᲼", title="Config Roles", color="success", is_dm=False, is_system=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class ChannelsModal(discord.ui.Modal, title="Config: Channels"):
     logs = discord.ui.TextInput(label="Logs channel ID", required=False, max_length=24)
@@ -49,7 +51,8 @@ class ChannelsModal(discord.ui.Modal, title="Config: Channels"):
     async def on_submit(self, interaction: discord.Interaction):
         gid = interaction.guild_id
         if not gid:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await cfg_set(self.bot.db, gid, "channels.logs", self.logs.value.strip())
         await cfg_set(self.bot.db, gid, "channels.announcements", self.announcements.value.strip())
@@ -57,7 +60,8 @@ class ChannelsModal(discord.ui.Modal, title="Config: Channels"):
         await cfg_set(self.bot.db, gid, "channels.intros", self.intros.value.strip())
         await cfg_set(self.bot.db, gid, "channels.spam", self.spam.value.strip())
 
-        await interaction.response.send_message(embed=isla_embed("Saved.\n᲼᲼", title="Config Channels"), ephemeral=True)
+        embed = create_embed("Saved.\n᲼᲼", title="Config Channels", color="success", is_dm=False, is_system=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class EconomyModal(discord.ui.Modal, title="Config: Economy"):
     daily_amount = discord.ui.TextInput(label="Daily coin base amount", default="80", max_length=10)
@@ -73,7 +77,8 @@ class EconomyModal(discord.ui.Modal, title="Config: Economy"):
     async def on_submit(self, interaction: discord.Interaction):
         gid = interaction.guild_id
         if not gid:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await cfg_set(self.bot.db, gid, "economy.daily_base", self.daily_amount.value.strip())
         await cfg_set(self.bot.db, gid, "economy.streak_step", self.streak_step.value.strip())
@@ -81,7 +86,8 @@ class EconomyModal(discord.ui.Modal, title="Config: Economy"):
         await cfg_set(self.bot.db, gid, "economy.gambling_limit", self.gambling_limit.value.strip())
         await cfg_set(self.bot.db, gid, "economy.tax_rule", self.tax_rule.value.strip())
 
-        await interaction.response.send_message(embed=isla_embed("Saved.\n᲼᲼", title="Config Economy"), ephemeral=True)
+        embed = create_embed("Saved.\n᲼᲼", title="Config Economy", color="success", is_dm=False, is_system=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class OrdersModal(discord.ui.Modal, title="Config: Orders"):
     frequency = discord.ui.TextInput(label="Order frequency (e.g., hourly / daily)", default="daily", max_length=20)
@@ -97,7 +103,8 @@ class OrdersModal(discord.ui.Modal, title="Config: Orders"):
     async def on_submit(self, interaction: discord.Interaction):
         gid = interaction.guild_id
         if not gid:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await cfg_set(self.bot.db, gid, "orders.frequency", self.frequency.value.strip())
         await cfg_set(self.bot.db, gid, "orders.allowed_types", self.allowed_types.value.strip())
@@ -105,7 +112,8 @@ class OrdersModal(discord.ui.Modal, title="Config: Orders"):
         await cfg_set(self.bot.db, gid, "orders.penalties", self.penalties.value.strip())
         await cfg_set(self.bot.db, gid, "orders.reward_mult", self.rewards.value.strip())
 
-        await interaction.response.send_message(embed=isla_embed("Saved.\n᲼᲼", title="Config Orders"), ephemeral=True)
+        embed = create_embed("Saved.\n᲼᲼", title="Config Orders", color="success", is_dm=False, is_system=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 class ModerationModal(discord.ui.Modal, title="Config: Moderation"):
     filters = discord.ui.TextInput(label="Filters preset (off/basic/strict)", default="basic", max_length=20)
@@ -121,7 +129,8 @@ class ModerationModal(discord.ui.Modal, title="Config: Moderation"):
     async def on_submit(self, interaction: discord.Interaction):
         gid = interaction.guild_id
         if not gid:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await cfg_set(self.bot.db, gid, "mod.filters", self.filters.value.strip())
         await cfg_set(self.bot.db, gid, "mod.antispam", self.antispam.value.strip())
@@ -129,7 +138,8 @@ class ModerationModal(discord.ui.Modal, title="Config: Moderation"):
         await cfg_set(self.bot.db, gid, "mod.raid", self.raid.value.strip())
         await cfg_set(self.bot.db, gid, "mod.notes", self.notes.value.strip())
 
-        await interaction.response.send_message(embed=isla_embed("Saved.\n᲼᲼", title="Config Moderation"), ephemeral=True)
+        embed = create_embed("Saved.\n᲼᲼", title="Config Moderation", color="success", is_dm=False, is_system=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ---------- Cog ----------
 class ConfigGroup(commands.Cog):
@@ -140,10 +150,12 @@ class ConfigGroup(commands.Cog):
 
     async def _require_admin(self, interaction: discord.Interaction) -> bool:
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return False
         if not is_admin(interaction.user):
-            await interaction.response.send_message(embed=isla_embed("Not for you.\n᲼᲼", title="Config"), ephemeral=True)
+            embed = create_embed("Not for you.\n᲼᲼", title="Config", color="error", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return False
         return True
 

@@ -5,6 +5,7 @@ from discord import app_commands
 
 from utils.isla_style import isla_embed
 from utils.uk_parse import parse_when_to_ts, parse_duration_to_seconds, now_ts, human_eta
+from utils.embed_utils import create_embed
 
 class AnnounceGroup(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -30,7 +31,9 @@ class AnnounceGroup(commands.Cog):
             return await interaction.response.send_message(embed=isla_embed("Not for you.\n᲼᲼", title="Announce"), ephemeral=True)
 
         await interaction.response.defer(ephemeral=True)
-        await interaction.channel.send(embed=isla_embed(message + "\n᲼᲼", title=title or "Announcement"))
+        # Announcement is a system message (sent to channel, includes author)
+        embed = create_embed(message + "\n᲼᲼", title=title or "Announcement", color="system", is_dm=False, is_system=True)
+        await interaction.channel.send(embed=embed)
         await interaction.followup.send(embed=isla_embed("Sent.\n᲼᲼", title="Announce"), ephemeral=True)
 
     # /announce schedule
@@ -79,7 +82,8 @@ class AnnounceGroup(commands.Cog):
     async def remind_me(self, interaction: discord.Interaction, when: str, message: str):
         await interaction.response.defer(ephemeral=True)
         if not interaction.guild_id:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         ts = parse_when_to_ts(when)
         if ts <= now_ts():
@@ -164,7 +168,8 @@ class AnnounceGroup(commands.Cog):
                 member = guild.get_member(uid)
                 if member:
                     try:
-                        await member.send(embed=isla_embed(msg + "\n᲼᲼", title="Reminder"))
+                        embed = create_embed(msg + "\n᲼᲼", title="Reminder", color="info", is_dm=True, is_system=False)
+                        await member.send(embed=embed)
                     except Exception:
                         pass
             await self.bot.db.execute("UPDATE personal_reminders SET active=0 WHERE id=?", (int(r["id"]),))

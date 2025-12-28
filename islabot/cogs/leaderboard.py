@@ -6,6 +6,7 @@ from discord import app_commands
 
 from core.utils import day_key, now_ts
 from core.embedder import isla_embed
+from utils.embed_utils import create_embed
 
 class Leaderboard(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -73,7 +74,8 @@ class Leaderboard(commands.Cog):
     @app_commands.command(name="spotlight", description="Show today's spotlight leaderboard (activity + coins).")
     async def spotlight(self, interaction: discord.Interaction):
         if not interaction.guild:
-            await interaction.response.send_message("Guild only.", ephemeral=True)
+            embed = create_embed("Guild only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer()
         gid = interaction.guild.id

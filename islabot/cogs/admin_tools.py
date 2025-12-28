@@ -8,6 +8,7 @@ from discord import app_commands
 from core.features import FEATURES
 from core.utils import now_ts, day_key
 from utils.helpers import isla_embed
+from utils.embed_utils import create_embed
 
 class AdminTools(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -27,7 +28,8 @@ class AdminTools(commands.Cog):
     @app_commands.command(name="feature_list", description="(Mod) List feature flags (available modules).")
     async def feature_list(self, interaction: discord.Interaction):
         if not interaction.guild or not self._is_mod(interaction):
-            await interaction.response.send_message("Mods only.", ephemeral=True)
+            embed = create_embed("Mods only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         lines = [f"- `{k}`: {v}" for k, v in FEATURES.items()]
@@ -37,33 +39,39 @@ class AdminTools(commands.Cog):
     @app_commands.describe(feature="Feature name", enabled="Enable or disable")
     async def feature_set(self, interaction: discord.Interaction, feature: str, enabled: bool):
         if not interaction.guild or not self._is_admin(interaction):
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            embed = create_embed("Admin only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild.id
         if feature not in FEATURES:
-            await interaction.followup.send("Unknown feature. Use /feature_list.", ephemeral=True)
+            embed = create_embed("Unknown feature. Use /feature_list.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         await self.bot.flags.set_guild(gid, feature, enabled)
         await self.bot.db.audit(gid, interaction.user.id, None, "toggle_feature_guild", json.dumps({"feature": feature, "enabled": enabled}), now_ts())
-        await interaction.followup.send(f"Guild feature `{feature}` set to {enabled}.", ephemeral=True)
+        embed = create_embed(f"Guild feature `{feature}` set to {enabled}.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="feature_set_channel", description="(Admin) Enable/disable a feature in a channel.")
     @app_commands.describe(feature="Feature name", channel="Channel to configure", enabled="Enable or disable")
     async def feature_set_channel(self, interaction: discord.Interaction, feature: str, channel: discord.TextChannel, enabled: bool):
         if not interaction.guild or not self._is_admin(interaction):
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            embed = create_embed("Admin only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild.id
         if feature not in FEATURES:
-            await interaction.followup.send("Unknown feature. Use /feature_list.", ephemeral=True)
+            embed = create_embed("Unknown feature. Use /feature_list.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         await self.bot.flags.set_channel(gid, channel.id, feature, enabled)
         await self.bot.db.audit(gid, interaction.user.id, None, "toggle_feature_channel", json.dumps({"feature": feature, "channel_id": channel.id, "enabled": enabled}), now_ts())
-        await interaction.followup.send(f"Channel {channel.mention} feature `{feature}` set to {enabled}.", ephemeral=True)
+        embed = create_embed(f"Channel {channel.mention} feature `{feature}` set to {enabled}.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     # ---------------------------
     # Per-channel config
@@ -73,36 +81,42 @@ class AdminTools(commands.Cog):
     @app_commands.describe(channel="Channel to configure", key="Config key", value="Config value")
     async def channelcfg_set(self, interaction: discord.Interaction, channel: discord.TextChannel, key: str, value: str):
         if not interaction.guild or not self._is_admin(interaction):
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            embed = create_embed("Admin only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild.id
         await self.bot.chan_cfg.set(gid, channel.id, key, value)
         await self.bot.db.audit(gid, interaction.user.id, None, "channelcfg_set", json.dumps({"channel_id": channel.id, "key": key, "value": value}), now_ts())
-        await interaction.followup.send(f"Set {channel.mention} `{key}` = `{value}`", ephemeral=True)
+        embed = create_embed(f"Set {channel.mention} `{key}` = `{value}`", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="channelcfg_get", description="(Mod) Get a channel config key.")
     @app_commands.describe(channel="Channel to check", key="Config key")
     async def channelcfg_get(self, interaction: discord.Interaction, channel: discord.TextChannel, key: str):
         if not interaction.guild or not self._is_mod(interaction):
-            await interaction.response.send_message("Mods only.", ephemeral=True)
+            embed = create_embed("Mods only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild.id
         v = await self.bot.chan_cfg.get(gid, channel.id, key, default=None)
-        await interaction.followup.send(f"{channel.mention} `{key}` = `{v}`", ephemeral=True)
+        embed = create_embed(f"{channel.mention} `{key}` = `{v}`", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="channelcfg_del", description="(Admin) Delete a channel config key.")
     @app_commands.describe(channel="Channel to configure", key="Config key to delete")
     async def channelcfg_del(self, interaction: discord.Interaction, channel: discord.TextChannel, key: str):
         if not interaction.guild or not self._is_admin(interaction):
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            embed = create_embed("Admin only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         gid = interaction.guild.id
         await self.bot.chan_cfg.delete(gid, channel.id, key)
         await self.bot.db.audit(gid, interaction.user.id, None, "channelcfg_del", json.dumps({"channel_id": channel.id, "key": key}), now_ts())
-        await interaction.followup.send(f"Deleted {channel.mention} `{key}`", ephemeral=True)
+        embed = create_embed(f"Deleted {channel.mention} `{key}`", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     # ---------------------------
     # Notes + discipline
@@ -112,7 +126,8 @@ class AdminTools(commands.Cog):
     @app_commands.describe(user="User to note", note="Note text")
     async def note_set(self, interaction: discord.Interaction, user: discord.Member, note: str):
         if not interaction.guild or not self._is_mod(interaction):
-            await interaction.response.send_message("Mods only.", ephemeral=True)
+            embed = create_embed("Mods only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         gid, uid = interaction.guild.id, user.id
@@ -125,13 +140,15 @@ class AdminTools(commands.Cog):
             (gid, uid, note[:2000], interaction.user.id, now_ts(), now_ts()),
         )
         await self.bot.db.audit(gid, interaction.user.id, uid, "note_set", json.dumps({}), now_ts())
-        await interaction.followup.send(f"Note saved for {user.mention}.", ephemeral=True)
+        embed = create_embed(f"Note saved for {user.mention}.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="note_view", description="(Mod) View a private admin note on a user.")
     @app_commands.describe(user="User to view")
     async def note_view(self, interaction: discord.Interaction, user: discord.Member):
         if not interaction.guild or not self._is_mod(interaction):
-            await interaction.response.send_message("Mods only.", ephemeral=True)
+            embed = create_embed("Mods only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         gid, uid = interaction.guild.id, user.id
@@ -140,7 +157,8 @@ class AdminTools(commands.Cog):
             (gid, uid),
         )
         if not row:
-            await interaction.followup.send("No note.", ephemeral=True)
+            embed = create_embed("No note.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
         updated = f'<t:{int(row["updated_ts"])}:R>' if row["updated_ts"] else "—"
         await interaction.followup.send(
@@ -159,13 +177,15 @@ class AdminTools(commands.Cog):
         reason: str | None = None,
     ):
         if not interaction.guild or not self._is_mod(interaction):
-            await interaction.response.send_message("Mods only.", ephemeral=True)
+            embed = create_embed("Mods only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
 
         kind = kind.lower().strip()
         if kind not in ("warning", "discipline", "strike"):
-            await interaction.followup.send("kind must be warning|discipline|strike", ephemeral=True)
+            embed = create_embed("kind must be warning|discipline|strike", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         gid, uid = interaction.guild.id, user.id
@@ -176,13 +196,15 @@ class AdminTools(commands.Cog):
             (gid, uid, kind, (reason or "")[:500], int(points), interaction.user.id, now_ts()),
         )
         await self.bot.db.audit(gid, interaction.user.id, uid, "discipline_add", json.dumps({"kind": kind, "points": points}), now_ts())
-        await interaction.followup.send(f"Logged {kind} for {user.mention} (+{points}).", ephemeral=True)
+        embed = create_embed(f"Logged {kind} for {user.mention} (+{points}).", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="discipline_view", description="(Mod) View discipline totals + last entries.")
     @app_commands.describe(user="User to view", limit="Number of recent entries (1-10)")
     async def discipline_view(self, interaction: discord.Interaction, user: discord.Member, limit: app_commands.Range[int, 1, 10] = 5):
         if not interaction.guild or not self._is_mod(interaction):
-            await interaction.response.send_message("Mods only.", ephemeral=True)
+            embed = create_embed("Mods only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -219,7 +241,8 @@ class AdminTools(commands.Cog):
     @app_commands.describe(user="User to view")
     async def admin_profile(self, interaction: discord.Interaction, user: discord.Member):
         if not interaction.guild or not self._is_mod(interaction):
-            await interaction.response.send_message("Mods only.", ephemeral=True)
+            embed = create_embed("Mods only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -294,7 +317,8 @@ class AdminTools(commands.Cog):
         reason: str | None = None
     ):
         if not interaction.guild or not self._is_admin(interaction):
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            embed = create_embed("Admin only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -349,7 +373,8 @@ class AdminTools(commands.Cog):
         reason: str | None = None
     ):
         if not interaction.guild or not self._is_admin(interaction):
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            embed = create_embed("Admin only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -391,7 +416,8 @@ class AdminTools(commands.Cog):
         reason: str | None = None
     ):
         if not interaction.guild or not self._is_admin(interaction):
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            embed = create_embed("Admin only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -436,7 +462,8 @@ class AdminTools(commands.Cog):
         reason: str | None = None
     ):
         if not interaction.guild or not self._is_admin(interaction):
-            await interaction.response.send_message("Admin only.", ephemeral=True)
+            embed = create_embed("Admin only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
@@ -471,7 +498,8 @@ class AdminTools(commands.Cog):
     @app_commands.describe(user="User to check")
     async def user_status(self, interaction: discord.Interaction, user: discord.Member):
         if not interaction.guild or not self._is_mod(interaction):
-            await interaction.response.send_message("Mods only.", ephemeral=True)
+            embed = create_embed("Mods only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)

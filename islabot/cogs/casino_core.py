@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 
 from core.utils import now_ts
+from utils.embed_utils import create_embed
 
 
 class CasinoCore(commands.Cog):

@@ -11,6 +11,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from utils.uk_time import uk_day_ymd
+from utils.embed_utils import create_embed
 
 def now_ts() -> int:
     return int(time.time())
@@ -53,7 +54,8 @@ class EventBossCmd(commands.Cog):
     async def event_boss(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if not interaction.guild_id:
-            return await interaction.followup.send("Server only.", ephemeral=True)
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         gid = interaction.guild_id
         event_id = await self._pick_active_event(gid)

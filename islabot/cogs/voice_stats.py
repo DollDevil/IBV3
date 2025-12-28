@@ -4,6 +4,7 @@ from discord.ext import commands
 from discord import app_commands
 
 from core.utils import now_local
+from utils.embed_utils import create_embed
 
 
 def day_key_uk() -> str:
@@ -18,7 +19,8 @@ class VoiceStats(commands.Cog):
     @app_commands.command(name="voice", description="Show your voice activity today.")
     async def voice(self, interaction: discord.Interaction):
         if not interaction.guild:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         gid = interaction.guild.id
         uid = interaction.user.id

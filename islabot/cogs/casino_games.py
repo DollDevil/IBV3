@@ -8,6 +8,7 @@ from discord import app_commands
 
 from core.utils import now_ts, now_local, fmt
 from core.isla_text import sanitize_isla_text
+from utils.embed_utils import create_embed
 
 
 # ---- Casino thumbnails (you provided) ----
@@ -729,7 +730,8 @@ class CasinoGames(commands.Cog):
     @app_commands.command(name="casino", description="Show casino status and available games.")
     async def casino(self, interaction: discord.Interaction):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         gid = interaction.guild_id
         uid = interaction.user.id
@@ -762,7 +764,8 @@ class CasinoGames(commands.Cog):
 
         pick = pick.lower().strip()
         if pick not in ("heads", "tails"):
-            return await interaction.response.send_message("Pick must be heads or tails.", ephemeral=True)
+            embed = create_embed("Pick must be heads or tails.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await interaction.response.defer()
 
@@ -785,7 +788,8 @@ class CasinoGames(commands.Cog):
         if not ok:
             return await interaction.response.send_message(msg, ephemeral=True)
         if target < 2 or target > 6:
-            return await interaction.response.send_message("Target must be 2–6.", ephemeral=True)
+            embed = create_embed("Target must be 2–6.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await interaction.response.defer()
 
@@ -827,10 +831,12 @@ class CasinoGames(commands.Cog):
 
         bet_type = bet_type.lower().strip()
         if bet_type not in ("red", "black", "green", "odd", "even", "number"):
-            return await interaction.response.send_message("Invalid bet_type.", ephemeral=True)
+            embed = create_embed("Invalid bet_type.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         if bet_type == "number":
             if number is None or number < 0 or number > 36:
-                return await interaction.response.send_message("Number must be 0–36.", ephemeral=True)
+                embed = create_embed("Number must be 0–36.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await interaction.response.defer()
 
@@ -964,7 +970,8 @@ class CasinoGames(commands.Cog):
             return await interaction.response.send_message(msg, ephemeral=True)
 
         if target < 1.10 or target > 10.00:
-            return await interaction.response.send_message("Target must be 1.10–10.00.", ephemeral=True)
+            embed = create_embed("Target must be 1.10–10.00.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await interaction.response.defer()
 
@@ -1295,7 +1302,8 @@ class CasinoGames(commands.Cog):
     ])
     async def allin(self, interaction: discord.Interaction, game: str):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         await interaction.response.defer()
 
@@ -1317,7 +1325,8 @@ class CasinoGames(commands.Cog):
 
         bal = await self._get_balance(gid, uid)
         if bal <= 0:
-            return await interaction.followup.send("You have nothing to wager.", ephemeral=True)
+            embed = create_embed("You have nothing to wager.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Update cooldown
         await self.bot.db.execute(
@@ -1340,7 +1349,8 @@ class CasinoGames(commands.Cog):
         elif game == "blackjack":
             await self._play_blackjack(interaction, bal, meta)
         else:
-            return await interaction.followup.send("Invalid game. Use: roulette, dice, slots, or blackjack.", ephemeral=True)
+            embed = create_embed("Invalid game. Use: roulette, dice, slots, or blackjack.", color="info", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
 
     # --------------------
     # /allin_progress command
@@ -1348,7 +1358,8 @@ class CasinoGames(commands.Cog):
     @app_commands.command(name="allin_progress", description="Check your All-In unlock progress.")
     async def allin_progress(self, interaction: discord.Interaction):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
         uid = interaction.user.id
 

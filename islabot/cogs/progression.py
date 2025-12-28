@@ -7,6 +7,7 @@ from discord import app_commands
 
 from core.utils import now_ts, now_local, fmt
 from utils.helpers import isla_embed as helper_isla_embed
+from utils.embed_utils import create_embed
 
 
 RANKS = [
@@ -100,7 +101,8 @@ class Progression(commands.Cog):
     @app_commands.command(name="rank", description="Show your rank ladder progress.")
     async def rank(self, interaction: discord.Interaction):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
         uid = interaction.user.id
         await self._ensure_user(gid, uid)
@@ -119,7 +121,8 @@ class Progression(commands.Cog):
     @app_commands.command(name="weekly", description="Claim your weekly activity bonus (Coins).")
     async def weekly(self, interaction: discord.Interaction):
         if not interaction.guild_id:
-            return await interaction.response.send_message("Use this in a server.", ephemeral=True)
+            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
         gid = interaction.guild_id
         uid = interaction.user.id
         await self._ensure_user(gid, uid)
@@ -142,7 +145,8 @@ class Progression(commands.Cog):
             was = int(row["was"] or 0)
             
         if claimed:
-            return await interaction.response.send_message("You already claimed this week.", ephemeral=True)
+            embed = create_embed("You already claimed this week.", color="info", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
 
         was = await self.update_weekly_was(gid, uid)
         bonus = self.weekly_bonus_from_was(was)

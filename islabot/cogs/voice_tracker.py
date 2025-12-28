@@ -15,6 +15,7 @@ from discord.ext import commands, tasks
 from collections import defaultdict
 
 from utils.uk_time import uk_day_ymd
+from utils.embed_utils import create_embed
 
 VC_REDUCE_AFTER = 3600  # 1 hour without refresh message
 VC_REDUCED_MULT = 0.35  # used later in DP computation

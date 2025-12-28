@@ -2,6 +2,7 @@ from __future__ import annotations
 import discord
 from discord.ext import commands
 from core.utils import now_ts, day_key
+from utils.embed_utils import create_embed
 
 class Alive(commands.Cog):
     """Basic activity tracking and personality hot-reload."""

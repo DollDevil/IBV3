@@ -6,6 +6,7 @@ from discord import app_commands
 
 from core.utils import now_ts
 from core.embedder import isla_embed
+from utils.embed_utils import create_embed
 
 class Tributes(commands.Cog):
     def __init__(self, bot: commands.Bot):
@@ -21,7 +22,8 @@ class Tributes(commands.Cog):
     @app_commands.command(name="tribute", description="Log a symbolic tribute (no payment processing).")
     async def tribute(self, interaction: discord.Interaction, amount: app_commands.Range[int, 1, 100000], note: str | None = None):
         if not interaction.guild:
-            await interaction.response.send_message("Guild only.", ephemeral=True)
+            embed = create_embed("Guild only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -29,7 +31,8 @@ class Tributes(commands.Cog):
         await self.bot.db.ensure_user(gid, uid)
 
         if not await self._consent_ok(gid, uid):
-            await interaction.followup.send("You must /verify first.", ephemeral=True)
+            embed = create_embed("You must /verify first.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         # This is ONLY a log/roleplay ledger. No external payment handling.
@@ -60,12 +63,14 @@ class Tributes(commands.Cog):
                 except discord.Forbidden:
                     pass
 
-        await interaction.followup.send(f"Logged. (+{reward} Coins)", ephemeral=True)
+        embed = create_embed(f"Logged. (+{reward} Coins)", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="tributes", description="(Mod) View recent tribute logs.")
     async def tributes(self, interaction: discord.Interaction, limit: app_commands.Range[int, 1, 20] = 10):
         if not interaction.guild or not interaction.user.guild_permissions.manage_guild:
-            await interaction.response.send_message("Mods only.", ephemeral=True)
+            embed = create_embed("Mods only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
 
@@ -75,7 +80,8 @@ class Tributes(commands.Cog):
             (gid, int(limit)),
         )
         if not rows:
-            await interaction.followup.send("No tribute logs.", ephemeral=True)
+            embed = create_embed("No tribute logs.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         lines = []
