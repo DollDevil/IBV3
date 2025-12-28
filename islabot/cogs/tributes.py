@@ -64,7 +64,7 @@ class Tributes(commands.Cog):
                     pass
 
         embed = create_embed(f"Logged. (+{reward} Coins)", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="tributes", description="(Mod) View recent tribute logs.")
     async def tributes(self, interaction: discord.Interaction, limit: app_commands.Range[int, 1, 20] = 10):

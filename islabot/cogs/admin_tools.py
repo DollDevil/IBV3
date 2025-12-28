@@ -89,7 +89,7 @@ class AdminTools(commands.Cog):
         await self.bot.chan_cfg.set(gid, channel.id, key, value)
         await self.bot.db.audit(gid, interaction.user.id, None, "channelcfg_set", json.dumps({"channel_id": channel.id, "key": key, "value": value}), now_ts())
         embed = create_embed(f"Set {channel.mention} `{key}` = `{value}`", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="channelcfg_get", description="(Mod) Get a channel config key.")
     @app_commands.describe(channel="Channel to check", key="Config key")
@@ -102,7 +102,7 @@ class AdminTools(commands.Cog):
         gid = interaction.guild.id
         v = await self.bot.chan_cfg.get(gid, channel.id, key, default=None)
         embed = create_embed(f"{channel.mention} `{key}` = `{v}`", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="channelcfg_del", description="(Admin) Delete a channel config key.")
     @app_commands.describe(channel="Channel to configure", key="Config key to delete")
@@ -116,7 +116,7 @@ class AdminTools(commands.Cog):
         await self.bot.chan_cfg.delete(gid, channel.id, key)
         await self.bot.db.audit(gid, interaction.user.id, None, "channelcfg_del", json.dumps({"channel_id": channel.id, "key": key}), now_ts())
         embed = create_embed(f"Deleted {channel.mention} `{key}`", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     # ---------------------------
     # Notes + discipline
@@ -141,7 +141,7 @@ class AdminTools(commands.Cog):
         )
         await self.bot.db.audit(gid, interaction.user.id, uid, "note_set", json.dumps({}), now_ts())
         embed = create_embed(f"Note saved for {user.mention}.", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="note_view", description="(Mod) View a private admin note on a user.")
     @app_commands.describe(user="User to view")
@@ -197,7 +197,7 @@ class AdminTools(commands.Cog):
         )
         await self.bot.db.audit(gid, interaction.user.id, uid, "discipline_add", json.dumps({"kind": kind, "points": points}), now_ts())
         embed = create_embed(f"Logged {kind} for {user.mention} (+{points}).", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="discipline_view", description="(Mod) View discipline totals + last entries.")
     @app_commands.describe(user="User to view", limit="Number of recent entries (1-10)")
@@ -274,7 +274,7 @@ class AdminTools(commands.Cog):
             f"**{user}** ({user.mention})",
             tenure,
             f"Coins: **{int(u['coins'])}** | Debt: **{int(u['debt'])}** | LCE: **{int(u['lce'])}** | Stage: **{int(u['stage'])}**",
-            f"Last msg: {f'<t:{int(u['last_msg_ts'])}:R>' if u['last_msg_ts'] else '—'}",
+            f"Last msg: {'<t:' + str(int(u['last_msg_ts'])) + ':R>' if u['last_msg_ts'] else '—'}",
             "",
             "**Consent:**",
             f"- verified_18: {'✅' if int(c['verified_18']) else '❌'} | consent_ok: {'✅' if int(c['consent_ok']) else '❌'}",
@@ -528,7 +528,7 @@ class AdminTools(commands.Cog):
             f"- Opted out: **{'YES' if opted_out else 'NO'}**\n"
             f"- Safeword: **{sw_txt}**\n"
             f"- Coins: **{int(row['coins'])}** | Debt: **{int(row['debt'])}** | Stage: **{int(row['stage'])}**\n"
-            f"- Last msg: {f'<t:{int(row['last_msg_ts'])}:R>' if row['last_msg_ts'] else '—'}",
+            f"- Last msg: {'<t:' + str(int(row['last_msg_ts'])) + ':R>' if row['last_msg_ts'] else '—'}",
             ephemeral=True,
         )
 
