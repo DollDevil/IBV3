@@ -1091,7 +1091,7 @@ class EventSystem(commands.Cog):
             await orders_ch.send(embed=e)
 
         embed = create_embed(f"Season **{config['name']}** started. Finale will trigger automatically in week {config['finale_week']}.", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="event_start_boss", description="(Staff) Start a boss fight event.")
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -1157,7 +1157,7 @@ class EventSystem(commands.Cog):
             await orders_ch.send(embed=e)
 
         embed = create_embed(f"Boss started: `{eid}`", color="info", is_dm=False, is_system=False)
-            await interaction.followup.send(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     # =========================================================
     #  Scheduler 1: Activate scheduled events, end expired
