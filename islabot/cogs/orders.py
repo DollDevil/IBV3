@@ -1,3 +1,8 @@
+"""
+Orders Cog
+Consolidates: orders, orders_group, tributes
+"""
+
 from __future__ import annotations
 
 import json
@@ -8,11 +13,12 @@ from discord import app_commands
 from datetime import timedelta, datetime
 from zoneinfo import ZoneInfo
 
-from core.utils import now_ts, now_local, fmt
-from core.order_tones import ORDER_TONES, RITUAL_EXTRA_TONES, TONE_POOLS
-from core.order_templates import PERSONAL_TEMPLATES, RITUAL_TEMPLATES, weighted_choice
-from core.isla_text import sanitize_isla_text
+from core.utility import now_ts, now_local, fmt
+from core.orders import ORDER_TONES, RITUAL_EXTRA_TONES, TONE_POOLS, PERSONAL_TEMPLATES, RITUAL_TEMPLATES, weighted_choice
+from core.personality import sanitize_isla_text, isla_embed as core_isla_embed
 from utils.embed_utils import create_embed
+from utils.uk_time import uk_day_ymd
+from utils.economy import add_coins, ensure_wallet, get_wallet
 
 UK_TZ = ZoneInfo("Europe/London")
 
@@ -23,6 +29,9 @@ STYLE1_THUMBS = [
     "https://i.imgur.com/sGDoIDA.png",
     "https://i.imgur.com/qC0MOZN.png",
 ]
+
+STYLE1_NEUTRAL = "https://i.imgur.com/9oUjOQQ.png"
+ISLA_ICON = "https://i.imgur.com/5nsuuCV.png"
 
 
 def day_key_uk() -> str:
@@ -66,10 +75,77 @@ def build_order_embed(icon_url: str, title: str, order_desc: str, coins: int, ob
     return e
 
 
+def isla_embed_simple(desc: str, title: str | None = None, thumb: str | None = None) -> discord.Embed:
+    """Helper for orders_group style embeds"""
+    e = discord.Embed(title=title, description=desc)
+    e.set_author(name="Isla", icon_url=ISLA_ICON)
+    e.set_thumbnail(url=thumb or STYLE1_NEUTRAL)
+    return e
+
+
+async def ensure_obed(db, gid: int, uid: int):
+    await db.execute(
+        "INSERT OR IGNORE INTO obedience_profile(guild_id,user_id,obedience,streak_days,last_streak_ymd,mercy_uses,forgive_tokens,last_penalty_ts) VALUES(?,?,0,0,'',0,0,0)",
+        (gid, uid)
+    )
+
+
+async def add_obed(db, gid: int, uid: int, delta: int):
+    await ensure_obed(db, gid, uid)
+    await db.execute(
+        "UPDATE obedience_profile SET obedience = obedience + ? WHERE guild_id=? AND user_id=?",
+        (int(delta), gid, uid)
+    )
+
+
+async def maybe_advance_streak(db, gid: int, uid: int):
+    """Streak advances when user completes at least one order that day."""
+    await ensure_obed(db, gid, uid)
+    today = uk_day_ymd(now_ts())
+    row = await db.fetchone(
+        "SELECT streak_days,last_streak_ymd FROM obedience_profile WHERE guild_id=? AND user_id=?",
+        (gid, uid)
+    )
+    streak = int(row["streak_days"] or 0)
+    last = str(row["last_streak_ymd"] or "")
+
+    if last == today:
+        return streak
+
+    # if last was yesterday, +1 else reset to 1
+    dt_today = datetime.fromisoformat(today).replace(tzinfo=UK_TZ).date()
+    dt_last = None
+    try:
+        dt_last = datetime.fromisoformat(last).replace(tzinfo=UK_TZ).date()
+    except Exception:
+        dt_last = None
+
+    if dt_last and dt_last == (dt_today - timedelta(days=1)):
+        streak += 1
+    else:
+        streak = 1
+
+    await db.execute(
+        "UPDATE obedience_profile SET streak_days=?, last_streak_ymd=? WHERE guild_id=? AND user_id=?",
+        (streak, today, gid, uid)
+    )
+    return streak
+
+
 class Orders(commands.Cog):
+    """
+    Consolidated Orders Cog
+    Merges orders.py, orders_group.py, and tributes.py
+    """
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.icon = "https://i.imgur.com/5nsuuCV.png"
+        self.icon = ISLA_ICON
+        
+        # /orders group for catalog-based orders
+        self.orders_group = app_commands.Group(name="orders", description="Orders & streaks")
+        self._register_orders_group()
+        
+        # Start task loops
         self.order_tick.start()
         self.ritual_scheduler.start()
 
@@ -111,6 +187,14 @@ class Orders(commands.Cog):
         obedience = int(row["obedience"]) if row else 0
         lce = int(row["lce"]) if row else 0
         return stage_from_stats(obedience, lce)
+
+    async def _consent_ok(self, gid: int, uid: int) -> bool:
+        """Check if user has consent (for tributes)"""
+        row = await self.bot.db.fetchone(
+            "SELECT verified_18, consent_ok FROM consent WHERE guild_id=? AND user_id=?",
+            (gid, uid),
+        )
+        return bool(row and int(row["verified_18"]) == 1 and int(row["consent_ok"]) == 1)
 
     async def _next_order_id(self, gid: int) -> int:
         row = await self.bot.db.fetchone("SELECT value FROM order_system_state WHERE guild_id=? AND key='order_seq'", (gid,))
@@ -318,7 +402,7 @@ class Orders(commands.Cog):
 
         return False, "Unknown requirement."
 
-    # ------------------ order creation ------------------
+    # ------------------ order creation (orders.py system) ------------------
     async def create_order(self, guild: discord.Guild, *, kind: str, scope: str, owner_user_id: int,
                            title: str, description: str, reward_coins: int, reward_obedience: int,
                            requirement: dict, duration_minutes: int, max_slots: int, hint_channel_id: int,
@@ -363,42 +447,8 @@ class Orders(commands.Cog):
         await self._post_orders_announce(guild, "", embed)
         return order_id
 
-    # ------------------ slash commands ------------------
-    # Removed: /orders command (now handled by orders_group.py)
-    # @app_commands.command(name="orders", description="View active orders.")
-    async def _orders_legacy(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        gid = interaction.guild_id
-        if not gid:
-            embed = create_embed("Use this in a server.", color="info", is_dm=False, is_system=False)
-            return await interaction.followup.send(embed=embed, ephemeral=True)
-
-        rows = await self.bot.db.fetchall(
-            "SELECT order_id,kind,scope,owner_user_id,title,reward_coins,reward_obedience,due_ts,max_slots,slots_taken "
-            "FROM orders WHERE guild_id=? AND status='active' ORDER BY due_ts ASC LIMIT 15",
-            (gid,)
-        )
-
-        stage = await self._user_stage(gid, interaction.user.id)
-        if not rows:
-            msg = pick(ORDER_TONES, "order_none", stage)
-            return await interaction.followup.send(msg, ephemeral=True)
-
-        lines = []
-        for r in rows:
-            remaining = max(0, int(r["max_slots"]) - int(r["slots_taken"]))
-            target = f" <@{int(r['owner_user_id'])}>" if r["scope"] == "user" else ""
-            lines.append(
-                f"`{int(r['order_id'])}` {r['kind'].upper()} {target} — {r['title']} "
-                f"• {fmt(int(r['reward_coins']))} Coins • {fmt(int(r['reward_obedience']))} Obedience "
-                f"• Slots {remaining}/{int(r['max_slots'])}"
-            )
-
-        e = discord.Embed(description=sanitize_isla_text("\n".join(lines)))
-        e.set_author(name="Isla", icon_url=self.icon)
-        e.set_thumbnail(url=random.choice(STYLE1_THUMBS))
-        await interaction.followup.send(embed=e, ephemeral=True)
-
+    # ==================== ORDERS.PY COMMANDS (orders/order_runs tables) ====================
+    
     @app_commands.command(name="order_view", description="View an order by ID.")
     @app_commands.describe(order_id="Order ID")
     async def order_view(self, interaction: discord.Interaction, order_id: int):
@@ -581,7 +631,7 @@ class Orders(commands.Cog):
         
         # Forward ritual completion to EventActivityTracker
         if order["kind"] == "ritual":
-            tracker = self.bot.get_cog("EventActivityTracker")
+            tracker = self.bot.get_cog("Data")
             if tracker:
                 try:
                     await tracker.mark_ritual_done(gid, interaction.user.id)
@@ -824,6 +874,533 @@ class Orders(commands.Cog):
         embed = create_embed(f"Personal order created: `{order_id}`", color="info", is_dm=False, is_system=False)
         await interaction.followup.send(embed=embed, ephemeral=True)
 
+    # ==================== ORDERS_GROUP.PY COMMANDS (orders_catalog/orders_claims tables) ====================
+
+    def _register_orders_group(self):
+        """Register /orders group subcommands"""
+        self.orders_group.add_command(self.orders_view)
+        self.orders_group.add_command(self.orders_accept)
+        self.orders_group.add_command(self.orders_complete)
+        self.orders_group.add_command(self.orders_forfeit)
+        self.orders_group.add_command(self.orders_streak)
+
+    @app_commands.command(name="view", description="Shows available orders.")
+    @app_commands.describe(type="daily, hourly, event, personal (or all)")
+    async def orders_view(self, interaction: discord.Interaction, type: str = "all"):
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+
+        t = type.lower().strip()
+        params = [gid]
+        where = "guild_id=? AND is_active=1"
+
+        if t in ("daily", "hourly", "event", "personal"):
+            where += " AND order_type=?"
+            params.append(t)
+
+        rows = await self.bot.db.fetchall(
+            f"""
+            SELECT order_id, order_type, title, reward_coins, reward_obed, duration_seconds, max_slots
+            FROM orders_catalog
+            WHERE {where}
+            ORDER BY order_type, order_id DESC
+            LIMIT 20
+            """,
+            tuple(params)
+        )
+
+        if not rows:
+            return await interaction.followup.send(embed=isla_embed_simple("No orders right now.\n᲼᲼", title="Orders"), ephemeral=True)
+
+        lines = []
+        for r in rows:
+            oid = int(r["order_id"])
+            otype = str(r["order_type"])
+            title = str(r["title"])
+            coins = int(r["reward_coins"])
+            obed = int(r["reward_obed"])
+            dur = int(r["duration_seconds"])
+            lines.append(f"**#{oid}** [{otype}] {title} — {fmt(coins)} Coins • {fmt(obed)} Obed • {dur//60}m")
+
+        e = isla_embed_simple("Pick one.\n᲼᲼", title="Orders")
+        e.add_field(name="Available", value="\n".join(lines), inline=False)
+        e.set_footer(text="Accept with /orders accept <order_id>")
+        await interaction.followup.send(embed=e, ephemeral=True)
+
+    @app_commands.command(name="accept", description="Accept an order (starts timer).")
+    @app_commands.describe(order_id="Order ID")
+    async def orders_accept(self, interaction: discord.Interaction, order_id: int):
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        uid = interaction.user.id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+
+        o = await self.bot.db.fetchone(
+            """
+            SELECT order_id, order_type, title, description, reward_coins, reward_obed, duration_seconds, max_slots, is_active
+            FROM orders_catalog
+            WHERE guild_id=? AND order_id=?
+            """,
+            (gid, int(order_id))
+        )
+        if not o or int(o["is_active"]) != 1:
+            return await interaction.followup.send(embed=isla_embed_simple("That order isn't available.\n᲼᲼", title="Accept"), ephemeral=True)
+
+        # slots check (if max_slots > 0)
+        max_slots = int(o["max_slots"] or 0)
+        if max_slots > 0:
+            c = await self.bot.db.fetchone(
+                "SELECT COUNT(*) AS n FROM orders_claims WHERE guild_id=? AND order_id=? AND status='active'",
+                (gid, int(order_id))
+            )
+            if int(c["n"] or 0) >= max_slots:
+                return await interaction.followup.send(embed=isla_embed_simple("No slots left.\n᲼᲼", title="Accept"), ephemeral=True)
+
+        # already accepted?
+        existing = await self.bot.db.fetchone(
+            "SELECT status FROM orders_claims WHERE guild_id=? AND order_id=? AND user_id=?",
+            (gid, int(order_id), uid)
+        )
+        if existing and str(existing["status"]) == "active":
+            return await interaction.followup.send(embed=isla_embed_simple("You already accepted that.\n᲼᲼", title="Accept"), ephemeral=True)
+
+        accepted = now_ts()
+        due = accepted + int(o["duration_seconds"])
+
+        await self.bot.db.execute(
+            """
+            INSERT INTO orders_claims(guild_id,order_id,user_id,status,accepted_ts,due_ts)
+            VALUES(?,?,?,?,?,?)
+            ON CONFLICT(guild_id,order_id,user_id) DO UPDATE SET
+              status='active',
+              accepted_ts=excluded.accepted_ts,
+              due_ts=excluded.due_ts,
+              completed_ts=0,
+              proof_text='',
+              proof_url='',
+              penalty_coins=0,
+              penalty_obed=0
+            """,
+            (gid, int(order_id), uid, "active", accepted, due)
+        )
+
+        e = isla_embed_simple(
+            f"Accepted.\n\n"
+            f"Order **#{order_id}**\n"
+            f"Due: <t:{due}:R>\n"
+            "᲼᲼",
+            title="Orders"
+        )
+        e.add_field(name="Task", value=str(o["description"]), inline=False)
+        e.set_footer(text="Complete with /orders complete <order_id> [proof]")
+        await interaction.followup.send(embed=e, ephemeral=True)
+
+    @app_commands.command(name="complete", description="Completes order (optional proof).")
+    @app_commands.describe(order_id="Order ID", proof="Optional proof text")
+    async def orders_complete(self, interaction: discord.Interaction, order_id: int, proof: str | None = None):
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        uid = interaction.user.id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+
+        claim = await self.bot.db.fetchone(
+            """
+            SELECT status, accepted_ts, due_ts
+            FROM orders_claims
+            WHERE guild_id=? AND order_id=? AND user_id=?
+            """,
+            (gid, int(order_id), uid)
+        )
+        if not claim or str(claim["status"]) != "active":
+            return await interaction.followup.send(embed=isla_embed_simple("You don't have that order active.\n᲼᲼", title="Complete"), ephemeral=True)
+
+        due = int(claim["due_ts"])
+        if now_ts() > due:
+            return await interaction.followup.send(embed=isla_embed_simple("Too late.\nThat one expired.\n᲼᲼", title="Complete"), ephemeral=True)
+
+        o = await self.bot.db.fetchone(
+            """
+            SELECT reward_coins, reward_obed, title
+            FROM orders_catalog
+            WHERE guild_id=? AND order_id=?
+            """,
+            (gid, int(order_id))
+        )
+        if not o:
+            return await interaction.followup.send(embed=isla_embed_simple("Order not found.\n᲼᲼", title="Complete"), ephemeral=True)
+
+        # attachment proof (optional)
+        proof_url = ""
+        if interaction.attachments:
+            proof_url = interaction.attachments[0].url
+
+        await self.bot.db.execute(
+            """
+            UPDATE orders_claims
+            SET status='completed', completed_ts=?, proof_text=?, proof_url=?
+            WHERE guild_id=? AND order_id=? AND user_id=?
+            """,
+            (now_ts(), proof or "", proof_url, gid, int(order_id), uid)
+        )
+
+        coins = int(o["reward_coins"])
+        obed = int(o["reward_obed"])
+
+        await ensure_wallet(self.bot.db, gid, uid)
+        if coins:
+            await add_coins(self.bot.db, gid, uid, coins, kind="order_reward", reason=f"order #{order_id}")
+
+        if obed:
+            await add_obed(self.bot.db, gid, uid, obed)
+
+        streak = await maybe_advance_streak(self.bot.db, gid, uid)
+
+        e = isla_embed_simple(
+            f"Completed.\n\n"
+            f"+**{fmt(coins)} Coins**\n"
+            f"+**{fmt(obed)} Obedience**\n"
+            f"Streak: **{streak}**\n"
+            "᲼᲼",
+            title="Orders"
+        )
+        e.add_field(name="Order", value=f"#{order_id} — {str(o['title'])}", inline=False)
+        if proof:
+            e.add_field(name="Proof", value=proof[:900], inline=False)
+        if proof_url:
+            e.add_field(name="Attachment", value=proof_url, inline=False)
+        await interaction.followup.send(embed=e, ephemeral=True)
+
+    @app_commands.command(name="forfeit", description="Forfeit an order with penalty.")
+    @app_commands.describe(order_id="Order ID")
+    async def orders_forfeit(self, interaction: discord.Interaction, order_id: int):
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        uid = interaction.user.id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+
+        claim = await self.bot.db.fetchone(
+            "SELECT status FROM orders_claims WHERE guild_id=? AND order_id=? AND user_id=?",
+            (gid, int(order_id), uid)
+        )
+        if not claim or str(claim["status"]) != "active":
+            return await interaction.followup.send(embed=isla_embed_simple("You don't have that order active.\n᲼᲼", title="Forfeit"), ephemeral=True)
+
+        # Penalty: small, consistent sink (tune later)
+        penalty_coins = 50
+        penalty_obed = 10
+
+        await ensure_wallet(self.bot.db, gid, uid)
+        await add_coins(self.bot.db, gid, uid, -penalty_coins, kind="order_forfeit", reason=f"order #{order_id}")
+        await add_obed(self.bot.db, gid, uid, -penalty_obed)
+
+        await self.bot.db.execute(
+            """
+            UPDATE orders_claims
+            SET status='forfeit', completed_ts=?, penalty_coins=?, penalty_obed=?
+            WHERE guild_id=? AND order_id=? AND user_id=?
+            """,
+            (now_ts(), penalty_coins, penalty_obed, gid, int(order_id), uid)
+        )
+
+        await self.bot.db.execute(
+            "INSERT INTO obedience_penalties(guild_id,user_id,ts,kind,coins,obed,cleared,note) VALUES(?,?,?,?,?,?,0,?)",
+            (gid, uid, now_ts(), "forfeit", penalty_coins, penalty_obed, f"order #{order_id}")
+        )
+
+        e = isla_embed_simple(
+            f"Forfeit logged.\n\n"
+            f"-**{fmt(penalty_coins)} Coins**\n"
+            f"-**{fmt(penalty_obed)} Obedience**\n"
+            "᲼᲼",
+            title="Orders"
+        )
+        await interaction.followup.send(embed=e, ephemeral=True)
+
+    @app_commands.command(name="streak", description="Shows your current obedience streak and bonuses.")
+    async def orders_streak(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        uid = interaction.user.id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+
+        await ensure_obed(self.bot.db, gid, uid)
+        r = await self.bot.db.fetchone(
+            "SELECT obedience, streak_days, last_streak_ymd, forgive_tokens FROM obedience_profile WHERE guild_id=? AND user_id=?",
+            (gid, uid)
+        )
+        obed = int(r["obedience"] or 0)
+        streak = int(r["streak_days"] or 0)
+        ft = int(r["forgive_tokens"] or 0)
+
+        # Example bonuses (tune later)
+        bonus = "None"
+        if streak >= 7:
+            bonus = "+5% order coins"
+        if streak >= 14:
+            bonus = "+10% order coins"
+        if streak >= 30:
+            bonus = "+15% order coins"
+
+        e = isla_embed_simple(
+            f"Streak.\n\n"
+            f"Obedience: **{fmt(obed)}**\n"
+            f"Streak: **{streak} days**\n"
+            f"Forgive tokens: **{ft}**\n"
+            "᲼᲼",
+            title="Streak"
+        )
+        e.add_field(name="Bonus", value=bonus, inline=False)
+        await interaction.followup.send(embed=e, ephemeral=True)
+
+    # ==================== STANDALONE COMMANDS (from orders_group.py) ====================
+
+    @app_commands.command(name="obey", description="Instant micro-order: a quick task.")
+    async def obey(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        micro = random.choice([
+            "React to the last message you read with ✅.",
+            "Send one message in #orders acknowledging you're present.",
+            "Write one useful tip in any channel (except spam).",
+            "Go to voice for 5 minutes. Say something once you join.",
+            "Post a short progress update about your day in any channel."
+        ])
+
+        e = isla_embed_simple(
+            "Quick task.\n\n"
+            f"{micro}\n"
+            "᲼᲼",
+            title="Obey"
+        )
+        await interaction.followup.send(embed=e, ephemeral=True)
+
+    @app_commands.command(name="kneel", description="A small commitment task with minor coin changes.")
+    async def kneel(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        uid = interaction.user.id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+
+        # Non-sexual roleplay-lite: "commitment"
+        task = random.choice([
+            "Pick one order and accept it now.",
+            "Send one constructive message in any channel.",
+            "Spend 5 minutes in voice, then type one line of what you did today."
+        ])
+
+        # Minor coin change: small sink + small "focus buff" placeholder
+        delta = -10
+        await ensure_wallet(self.bot.db, gid, uid)
+        await add_coins(self.bot.db, gid, uid, delta, kind="kneel", reason="commitment")
+
+        e = isla_embed_simple(
+            "Fine.\n\n"
+            f"{task}\n\n"
+            f"{delta} Coins.\n"
+            "᲼᲼",
+            title="Kneel"
+        )
+        await interaction.followup.send(embed=e, ephemeral=True)
+
+    @app_commands.command(name="beg", description="Request mercy. Costs Coins; may reduce punishment severity.")
+    @app_commands.describe(reason="Optional note")
+    async def beg(self, interaction: discord.Interaction, reason: str | None = None):
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        uid = interaction.user.id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+
+        cost = 75
+        await ensure_wallet(self.bot.db, gid, uid)
+        # Check balance
+        w = await get_wallet(self.bot.db, gid, uid)
+        if w.coins < cost:
+            return await interaction.followup.send(embed=isla_embed_simple("Not enough Coins.\n᲼᲼", title="Mercy"), ephemeral=True)
+
+        await add_coins(self.bot.db, gid, uid, -cost, kind="mercy", reason=reason or "mercy request")
+
+        # Store a mercy use token (consumed by your penalty engine later)
+        await ensure_obed(self.bot.db, gid, uid)
+        await self.bot.db.execute(
+            "UPDATE obedience_profile SET mercy_uses = mercy_uses + 1 WHERE guild_id=? AND user_id=?",
+            (gid, uid)
+        )
+
+        e = isla_embed_simple(
+            "Mercy request logged.\n\n"
+            f"-**{fmt(cost)} Coins**\n"
+            "This may soften the next penalty.\n"
+            "᲼᲼",
+            title="Beg"
+        )
+        if reason:
+            e.add_field(name="Reason", value=reason[:900], inline=False)
+        await interaction.followup.send(embed=e, ephemeral=True)
+
+    @app_commands.command(name="forgive", description="Forgiveness purchase or earned via streak.")
+    async def forgive(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        uid = interaction.user.id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+
+        await ensure_obed(self.bot.db, gid, uid)
+        prof = await self.bot.db.fetchone(
+            "SELECT forgive_tokens FROM obedience_profile WHERE guild_id=? AND user_id=?",
+            (gid, uid)
+        )
+        tokens = int(prof["forgive_tokens"] or 0)
+
+        # If you have a token, use it; else charge coins
+        cost = 250
+        used_token = False
+
+        if tokens > 0:
+            await self.bot.db.execute(
+                "UPDATE obedience_profile SET forgive_tokens = forgive_tokens - 1 WHERE guild_id=? AND user_id=?",
+                (gid, uid)
+            )
+            used_token = True
+        else:
+            await ensure_wallet(self.bot.db, gid, uid)
+            w = await get_wallet(self.bot.db, gid, uid)
+            if w.coins < cost:
+                return await interaction.followup.send(embed=isla_embed_simple("Not enough Coins.\n᲼᲼", title="Forgive"), ephemeral=True)
+            await add_coins(self.bot.db, gid, uid, -cost, kind="forgive", reason="forgiveness")
+
+        # Clear most recent uncleared penalty
+        pen = await self.bot.db.fetchone(
+            """
+            SELECT id, kind, coins, obed, note
+            FROM obedience_penalties
+            WHERE guild_id=? AND user_id=? AND cleared=0
+            ORDER BY ts DESC
+            LIMIT 1
+            """,
+            (gid, uid)
+        )
+
+        if not pen:
+            msg = "No penalties to clear.\n᲼᲼"
+            if not used_token:
+                # refund if we charged
+                await add_coins(self.bot.db, gid, uid, +cost, kind="refund", reason="no penalties to forgive")
+            else:
+                # return token
+                await self.bot.db.execute(
+                    "UPDATE obedience_profile SET forgive_tokens = forgive_tokens + 1 WHERE guild_id=? AND user_id=?",
+                    (gid, uid)
+                )
+            return await interaction.followup.send(embed=isla_embed_simple(msg, title="Forgive"), ephemeral=True)
+
+        await self.bot.db.execute(
+            "UPDATE obedience_penalties SET cleared=1 WHERE id=?",
+            (int(pen["id"]),)
+        )
+
+        e = isla_embed_simple(
+            "Cleared.\n\n"
+            f"Penalty removed: **{pen['kind']}**\n"
+            "᲼᲼",
+            title="Forgive"
+        )
+        if used_token:
+            e.add_field(name="Cost", value="1 Forgive token", inline=True)
+        else:
+            e.add_field(name="Cost", value=f"{fmt(cost)} Coins", inline=True)
+
+        await interaction.followup.send(embed=e, ephemeral=True)
+
+    # ==================== TRIBUTES COMMANDS ====================
+
+    @app_commands.command(name="tribute", description="Log a symbolic tribute (no payment processing).")
+    async def tribute(self, interaction: discord.Interaction, amount: app_commands.Range[int, 1, 100000], note: str | None = None):
+        if not interaction.guild:
+            embed = create_embed("Guild only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        gid, uid = interaction.guild.id, interaction.user.id
+        await self.bot.db.ensure_user(gid, uid)
+
+        if not await self._consent_ok(gid, uid):
+            embed = create_embed("You must /verify first.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        # This is ONLY a log/roleplay ledger. No external payment handling.
+        await self.bot.db.execute(
+            "INSERT INTO tribute_log(guild_id,user_id,amount,note,ts) VALUES(?,?,?,?,?)",
+            (gid, uid, int(amount), (note or "").strip()[:200], now_ts()),
+        )
+
+        # Optional: small coin reward to reinforce engagement (tune as desired)
+        reward = min(200, max(5, int(amount // 50)))
+        await self.bot.db.execute(
+            "UPDATE users SET coins=coins+?, lce=lce+? WHERE guild_id=? AND user_id=?",
+            (reward, reward, gid, uid),
+        )
+
+        # Send a mod log entry if configured
+        log_chan_id = self.bot.cfg.get("channels", "logs")
+        if log_chan_id:
+            ch = interaction.guild.get_channel(int(log_chan_id))
+            if ch:
+                e = core_isla_embed(
+                    "Tribute Logged",
+                    f"User: <@{uid}>\nAmount: **{amount}**\nRewarded Coins: **{reward}**\nNote: {note or '—'}",
+                    color=0xFF4081,
+                )
+                try:
+                    await ch.send(embed=e)
+                except discord.Forbidden:
+                    pass
+
+        embed = create_embed(f"Logged. (+{reward} Coins)", color="info", is_dm=False, is_system=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="tributes", description="(Mod) View recent tribute logs.")
+    async def tributes(self, interaction: discord.Interaction, limit: app_commands.Range[int, 1, 20] = 10):
+        if not interaction.guild or not interaction.user.guild_permissions.manage_guild:
+            embed = create_embed("Mods only.", color="info", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        gid = interaction.guild.id
+        rows = await self.bot.db.fetchall(
+            "SELECT user_id,amount,note,ts FROM tribute_log WHERE guild_id=? ORDER BY ts DESC LIMIT ?",
+            (gid, int(limit)),
+        )
+        if not rows:
+            embed = create_embed("No tribute logs.", color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        lines = []
+        for r in rows:
+            lines.append(f"- <@{int(r['user_id'])}>: **{int(r['amount'])}** — {r['note'] or '—'} (<t:{int(r['ts'])}:R>)")
+
+        await interaction.followup.send("\n".join(lines), ephemeral=True)
+
     # ------------------ scheduler: reminders + expirations ------------------
     @tasks.loop(seconds=60)
     async def order_tick(self):
@@ -843,7 +1420,6 @@ class Orders(commands.Cog):
                     (gid, int(r["order_id"]), int(r["user_id"]))
                 )
                 await self._apply_failure_penalty(gid, int(r["user_id"]))
-                # (no spam DM; failures are seen when they try / progress, or add optional gentle DM here)
 
             # Mid-timer reminders (only once per run)
             # Store reminder flag in progress_json: {"reminded":true}
@@ -967,7 +1543,6 @@ class Orders(commands.Cog):
                 (gid, "ritual_post_day", dk)
             )
 
-
     # ------------------------------------------------------------
     # Methods expected by EventSystem (boss ES tracking)
     # ------------------------------------------------------------
@@ -1003,4 +1578,21 @@ class Orders(commands.Cog):
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(Orders(bot))
+    # Remove command if it exists before creating cog (to avoid conflicts)
+    bot.tree.remove_command("orders", guild=None)
+    cog = Orders(bot)
+    # Add cog - commands will be auto-registered
+    try:
+        await bot.add_cog(cog)
+    except Exception as e:
+        # If command already registered, remove it and try again
+        if "CommandAlreadyRegistered" in str(e):
+            bot.tree.remove_command("orders", guild=None)
+            await bot.add_cog(cog)
+        else:
+            raise
+    # Ensure command is in tree with override
+    try:
+        bot.tree.add_command(cog.orders_group, override=True)
+    except Exception:
+        pass  # Command already registered - ignore

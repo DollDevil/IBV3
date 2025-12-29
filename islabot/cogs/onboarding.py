@@ -1,13 +1,23 @@
 from __future__ import annotations
 import re
 import secrets
+from typing import Optional
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 
 from utils.helpers import now_ts, format_time_left, isla_embed as helper_isla_embed, ensure_user_row
 from utils.embed_utils import create_embed
 from utils.guild_config import cfg_get, cfg_set
+from core.personality import pick, DEFAULT_POOLS
+
+# Consent modules mapping
+MODULES = {
+    "orders": "opt_orders",
+    "public_callouts": "opt_public_callouts",
+    "dm": "opt_dm",
+    "humiliation": "opt_humiliation",
+}
 
 VACATION_MIN_DAYS = 3
 VACATION_MAX_DAYS = 21
@@ -101,6 +111,161 @@ class Onboarding(commands.Cog):
             bot.tree.add_command(self.testmessage_group)
         except Exception:
             pass
+        
+        # Start reminder task
+        self.reminder_task.start()
+    
+    def cog_unload(self):
+        self.reminder_task.cancel()
+    
+    @tasks.loop(hours=6)
+    async def reminder_task(self):
+        """Check for users who need onboarding reminders."""
+        await self.bot.wait_until_ready()
+        
+        # Get users who joined but haven't completed onboarding
+        from core.utility import now_ts
+        cutoff_24h = now_ts() - 86400
+        cutoff_48h = now_ts() - 172800
+        cutoff_72h = now_ts() - 259200
+        
+        # Check for 24h reminder
+        await self._send_reminders(cutoff_24h, "24h")
+        # Check for 48h reminder
+        await self._send_reminders(cutoff_48h, "48h")
+        # Check for 72h reminder
+        await self._send_reminders(cutoff_72h, "72h")
+    
+    @reminder_task.before_loop
+    async def before_reminder_task(self):
+        await self.bot.wait_until_ready()
+    
+    async def _send_reminders(self, cutoff_ts: int, reminder_type: str):
+        """Send reminders to users who haven't completed onboarding."""
+        # Get users from onboarding_state who haven't verified
+        rows = await self.bot.db.fetchall(
+            """
+            SELECT guild_id, user_id, joined_ts
+            FROM onboarding_state
+            WHERE verified_ts = 0 AND joined_ts <= ? AND joined_ts > ?
+            """,
+            (cutoff_ts, cutoff_ts - 86400)  # Within last 24h of cutoff
+        )
+        
+        for row in rows:
+            guild_id = int(row["guild_id"])
+            user_id = int(row["user_id"])
+            
+            # Check if reminder already sent
+            reminder_sent = await self.bot.db.fetchone(
+                """
+                SELECT 1 FROM onboarding_reminders
+                WHERE guild_id=? AND user_id=? AND reminder_type=?
+                """,
+                (guild_id, user_id, reminder_type)
+            )
+            
+            if reminder_sent:
+                continue  # Already sent
+            
+            # Get guild and user
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                continue
+            
+            user = guild.get_member(user_id)
+            if not user:
+                continue
+            
+            # Check if user is now verified
+            state = await self.bot.db.fetchone(
+                "SELECT verified_ts FROM onboarding_state WHERE guild_id=? AND user_id=?",
+                (guild_id, user_id)
+            )
+            if state and int(state["verified_ts"] or 0) > 0:
+                continue  # Already verified
+            
+            # Send reminder
+            channel = await self.get_onboarding_channel(guild)
+            if channel:
+                try:
+                    embed = discord.Embed(
+                        description=f"{user.mention}, you haven't completed onboarding yet.\nPlease follow the procedure to gain full access.",
+                        colour=0x65566c
+                    )
+                    embed.set_author(name="Onboarding Reminder", icon_url="https://i.imgur.com/irmCXhw.gif")
+                    await channel.send(embed=embed)
+                    
+                    # Mark reminder as sent
+                    await self.bot.db.execute(
+                        """
+                        INSERT OR REPLACE INTO onboarding_reminders(guild_id, user_id, reminder_type, sent_ts)
+                        VALUES(?,?,?,?)
+                        """,
+                        (guild_id, user_id, reminder_type, now_ts())
+                    )
+                except Exception:
+                    pass
+    
+    async def mark_onboarding_step(
+        self,
+        guild_id: int,
+        user_id: int,
+        step: str,
+        completed: bool = True,
+        data: Optional[dict] = None
+    ):
+        """Mark an onboarding step as completed."""
+        import json
+        data_json = json.dumps(data or {})
+        completed_ts = now_ts() if completed else None
+        
+        await self.bot.db.execute(
+            """
+            INSERT OR REPLACE INTO onboarding_progress(guild_id, user_id, step, completed, completed_ts, data_json)
+            VALUES(?,?,?,?,?,?)
+            """,
+            (guild_id, user_id, step, 1 if completed else 0, completed_ts, data_json)
+        )
+    
+    async def get_onboarding_progress(
+        self,
+        guild_id: int,
+        user_id: int
+    ) -> dict:
+        """Get onboarding progress for a user."""
+        rows = await self.bot.db.fetchall(
+            "SELECT step, completed, completed_ts, data_json FROM onboarding_progress WHERE guild_id=? AND user_id=?",
+            (guild_id, user_id)
+        )
+        
+        progress = {}
+        for row in rows:
+            import json
+            try:
+                data = json.loads(row["data_json"] or "{}")
+            except Exception:
+                data = {}
+            
+            progress[str(row["step"])] = {
+                "completed": bool(int(row["completed"] or 0)),
+                "completed_ts": int(row["completed_ts"]) if row["completed_ts"] else None,
+                "data": data
+            }
+        
+        return progress
+    
+    async def is_onboarding_complete(
+        self,
+        guild_id: int,
+        user_id: int
+    ) -> bool:
+        """Check if user has completed onboarding."""
+        state = await self.bot.db.fetchone(
+            "SELECT verified_ts FROM onboarding_state WHERE guild_id=? AND user_id=?",
+            (guild_id, user_id)
+        )
+        return bool(state and int(state["verified_ts"] or 0) > 0)
 
     # -------- Onboarding Helpers --------
     async def get_onboarding_channel(self, guild: discord.Guild) -> discord.TextChannel | None:
@@ -195,6 +360,18 @@ class Onboarding(commands.Cog):
                 await member.remove_roles(unverified_role, reason="Accepted rules")
             except discord.Forbidden:
                 pass
+
+        # Mark onboarding step
+        await self.mark_onboarding_step(guild.id, member.id, "rules_accepted", completed=True)
+        
+        # Update onboarding_state
+        await self.bot.db.execute(
+            """
+            INSERT OR REPLACE INTO onboarding_state(guild_id, user_id, joined_ts, verified_ts)
+            VALUES(?,?,?,?)
+            """,
+            (guild.id, member.id, int(member.joined_at.timestamp()) if member.joined_at else now_ts(), now_ts())
+        )
 
         embed = discord.Embed(
             description=f"Verification complete.\n<a:verifyredv2:1454436023735160923> Access unlocked.\n\nUser experience initialization started.\n<:msg3:1454433017438277652> System message transmitted to {member.mention} via DM.",
@@ -350,6 +527,19 @@ class Onboarding(commands.Cog):
             except discord.Forbidden:
                 pass
         
+        # Initialize onboarding state
+        joined_ts = int(member.joined_at.timestamp()) if member.joined_at else now_ts()
+        await self.bot.db.execute(
+            """
+            INSERT OR IGNORE INTO onboarding_state(guild_id, user_id, joined_ts, verified_ts, last_reminder_ts)
+            VALUES(?,?,?,0,0)
+            """,
+            (guild.id, member.id, joined_ts)
+        )
+        
+        # Mark welcome step
+        await self.mark_onboarding_step(guild.id, member.id, "welcome_sent", completed=True)
+        
         channel = await self.get_onboarding_channel(guild)
         if channel:
             try:
@@ -400,6 +590,105 @@ class Onboarding(commands.Cog):
         if await self.check_bad_pup_block(interaction):
             return
         await self.send_onboarding_rules(interaction, is_button=False)
+    
+    @app_commands.command(name="verify", description="Grant required server roles (18+ verified + consent).")
+    async def verify(self, interaction: discord.Interaction):
+        """Verify command - grant roles and mark as verified."""
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            embed = create_embed("Guild only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        g = interaction.guild
+        m = interaction.user
+        gid, uid = g.id, m.id
+        await self.bot.db.ensure_user(gid, uid)
+
+        r18 = self.bot.cfg.get("roles", "verified_18")
+        rcons = self.bot.cfg.get("roles", "consent")
+
+        # Best-effort role grants (server chooses how strict this is)
+        added = []
+        if r18:
+            role = g.get_role(int(r18))
+            if role and role not in m.roles:
+                try:
+                    await m.add_roles(role, reason="Isla verify")
+                    added.append(role.name)
+                except discord.Forbidden:
+                    pass
+        if rcons:
+            role = g.get_role(int(rcons))
+            if role and role not in m.roles:
+                try:
+                    await m.add_roles(role, reason="Isla verify")
+                    added.append(role.name)
+                except discord.Forbidden:
+                    pass
+
+        await self.bot.db.execute(
+            "UPDATE consent SET verified_18=1, consent_ok=1 WHERE guild_id=? AND user_id=?",
+            (gid, uid),
+        )
+        embed = create_embed(f"Verified. Roles added: {', '.join(added) if added else '—'}", color="success", is_dm=False, is_system=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    @app_commands.command(name="consent", description="View or change consent modules.")
+    async def consent(self, interaction: discord.Interaction, action: str, module: str | None = None):
+        """Consent command - view or modify consent modules."""
+        if not interaction.guild:
+            embed = create_embed("Guild only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+
+        gid, uid = interaction.guild.id, interaction.user.id
+        await self.bot.db.ensure_user(gid, uid)
+
+        action = action.lower().strip()
+        if action == "view":
+            row = await self.bot.db.fetchone("SELECT * FROM consent WHERE guild_id=? AND user_id=?", (gid, uid))
+            if not row:
+                embed = create_embed("No consent record.", color="info", is_dm=False, is_system=False)
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            lines = []
+            for k, col in MODULES.items():
+                lines.append(f"- {k}: {'✅' if int(row[col]) == 1 else '❌'}")
+            lines.append(f"- verified_18: {'✅' if int(row['verified_18']) == 1 else '❌'}")
+            lines.append(f"- consent_ok: {'✅' if int(row['consent_ok']) == 1 else '❌'}")
+            embed = create_embed("\n".join(lines), color="info", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        if action not in ("optin", "optout") or not module or module not in MODULES:
+            embed = create_embed("Use: /consent action:view OR /consent action:optin|optout module:orders|public_callouts|dm|humiliation", color="warning", is_dm=False, is_system=False)
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        col = MODULES[module]
+        val = 1 if action == "optin" else 0
+        await self.bot.db.execute(f"UPDATE consent SET {col}=? WHERE guild_id=? AND user_id=?", (val, gid, uid))
+        embed = create_embed(f"{module} set to {'ON' if val else 'OFF'}.", color="success", is_dm=False, is_system=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    @app_commands.command(name="resetme", description="Reset your Isla stats (coins/consent/orders).")
+    async def resetme(self, interaction: discord.Interaction):
+        """Reset command - reset user stats."""
+        if not interaction.guild:
+            embed = create_embed("Guild only.", color="warning", is_dm=False, is_system=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        gid, uid = interaction.guild.id, interaction.user.id
+        await self.bot.db.ensure_user(gid, uid)
+
+        await self.bot.db.execute("DELETE FROM orders_active WHERE guild_id=? AND user_id=?", (gid, uid))
+        await self.bot.db.execute("UPDATE users SET coins=0,lce=0,debt=0,stage=0,daily_claim_day=NULL,safeword_until_ts=NULL WHERE guild_id=? AND user_id=?", (gid, uid))
+        await self.bot.db.execute("UPDATE consent SET opt_orders=0,opt_public_callouts=0,opt_dm=0,opt_humiliation=0 WHERE guild_id=? AND user_id=?", (gid, uid))
+
+        embed = create_embed("Reset complete.", color="success", is_dm=False, is_system=False)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     # -------- global helper for user flags (can be imported elsewhere) --------
     async def isla_user_flags(self, gid: int, uid: int) -> dict:

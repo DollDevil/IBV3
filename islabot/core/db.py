@@ -1,23 +1,63 @@
 from __future__ import annotations
 import aiosqlite
+from contextlib import asynccontextmanager
 
 class Database:
     def __init__(self, path: str):
         self.path = path
         self.conn: aiosqlite.Connection | None = None
+        self._in_tx: bool = False
 
     async def connect(self):
         self.conn = await aiosqlite.connect(self.path)
         self.conn.row_factory = aiosqlite.Row
+        # Enable WAL and foreign keys for better performance and integrity
+        await self.conn.execute("PRAGMA journal_mode=WAL;")
+        await self.conn.execute("PRAGMA foreign_keys=ON;")
+        await self.conn.execute("PRAGMA synchronous=NORMAL;")
+        await self.conn.commit()
 
     async def close(self):
         if self.conn:
             await self.conn.close()
 
-    async def execute(self, sql: str, params=()):
+    async def execute(self, sql: str, params=(), commit: bool = True):
+        """Execute SQL statement. If commit=False, don't commit (for use in transactions)."""
         assert self.conn
         await self.conn.execute(sql, params)
+        # Only commit if explicitly requested AND not inside a transaction
+        effective_commit = commit and not self._in_tx
+        if effective_commit:
+            await self.conn.commit()
+
+    async def executemany(self, sql: str, params_list, commit: bool = True):
+        """Execute SQL statement multiple times with different parameters."""
+        assert self.conn
+        await self.conn.executemany(sql, params_list)
+        # Only commit if explicitly requested AND not inside a transaction
+        effective_commit = commit and not self._in_tx
+        if effective_commit:
+            await self.conn.commit()
+
+    async def commit(self):
+        """Explicitly commit the current transaction."""
+        assert self.conn
         await self.conn.commit()
+
+    @asynccontextmanager
+    async def transaction(self):
+        """Transaction context manager: BEGIN on enter, COMMIT on success, ROLLBACK on exception."""
+        assert self.conn
+        self._in_tx = True
+        try:
+            await self.conn.execute("BEGIN")
+            yield self
+            await self.conn.commit()
+        except Exception:
+            await self.conn.rollback()
+            raise
+        finally:
+            self._in_tx = False
 
     async def fetchone(self, sql: str, params=()):
         assert self.conn
@@ -33,20 +73,32 @@ class Database:
         await cur.close()
         return rows
 
-    async def _ensure_column(self, table: str, col: str, ddl: str):
+    async def _ensure_column(self, table: str, col: str, ddl: str, commit: bool = True):
         """Add column if missing (SQLite)."""
         assert self.conn
         try:
             rows = await self.fetchall(f"PRAGMA table_info({table});")
             existing = {r["name"] for r in rows}
             if col not in existing:
-                await self.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl};")
+                await self.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl};", commit=commit)
         except Exception as e:
             # Table might not exist yet, that's okay
             print(f"Warning: Could not check/add column {col} to {table}: {e}")
 
     async def migrate(self):
-        """Run database migrations. Handles errors gracefully."""
+        """Run database migrations. Handles errors gracefully. Wrapped in a single transaction."""
+        try:
+            async with self.transaction():
+                await self._migrate_tables()
+        except Exception as e:
+            print(f"Database migration error: {e}")
+            print(f"Error type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    async def _migrate_tables(self):
+        """Internal migration method (called within transaction)."""
         try:
             await self.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -1207,7 +1259,390 @@ class Database:
               opted_out_ts INTEGER,
               PRIMARY KEY (guild_id, user_id)
             );
-        """)
+            """)
+
+            # =========================
+            # V3 SCHEMA: 7-day-window immersion/progression system
+            # All tables prefixed with v3_ to avoid collision with legacy tables
+            # =========================
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_guilds (
+              guild_id TEXT PRIMARY KEY,
+              created_at INTEGER NOT NULL DEFAULT 0,
+              name_cache TEXT,
+              settings_json TEXT NOT NULL DEFAULT '{}'
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_users (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              created_at INTEGER NOT NULL DEFAULT 0,
+              join_ts INTEGER NOT NULL DEFAULT 0,
+              last_seen_ts INTEGER NOT NULL DEFAULT 0,
+              is_opted_out INTEGER NOT NULL DEFAULT 0,
+              opt_out_ts INTEGER,
+              data_deleted_ts INTEGER,
+              PRIMARY KEY (guild_id, user_id)
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_user_profile (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              persona_mode TEXT NOT NULL DEFAULT 'default',
+              nickname_preference TEXT NOT NULL DEFAULT '',
+              nickname_opt_in INTEGER NOT NULL DEFAULT 0,
+              dm_opt_in INTEGER NOT NULL DEFAULT 0,
+              public_callouts_opt_in INTEGER NOT NULL DEFAULT 0,
+              interaction_opts_json TEXT NOT NULL DEFAULT '{}',
+              notes_user_visible TEXT NOT NULL DEFAULT '',
+              updated_at INTEGER NOT NULL DEFAULT 0,
+              PRIMARY KEY (guild_id, user_id)
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_activity_daily (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              date_key TEXT NOT NULL,
+              message_count INTEGER NOT NULL DEFAULT 0,
+              reaction_count INTEGER NOT NULL DEFAULT 0,
+              voice_seconds INTEGER NOT NULL DEFAULT 0,
+              dap_points INTEGER NOT NULL DEFAULT 0,
+              was_points INTEGER NOT NULL DEFAULT 0,
+              first_msg_ts INTEGER,
+              last_msg_ts INTEGER,
+              last_voice_ts INTEGER,
+              PRIMARY KEY (guild_id, user_id, date_key)
+            );
+            """)
+
+            await self.execute("""
+            CREATE INDEX IF NOT EXISTS idx_v3_activity_daily_date
+            ON v3_activity_daily(guild_id, date_key);
+            """)
+
+            await self.execute("""
+            CREATE INDEX IF NOT EXISTS idx_v3_activity_daily_user_date
+            ON v3_activity_daily(guild_id, user_id, date_key);
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_voice_sessions (
+              session_id TEXT PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              channel_id TEXT,
+              join_ts INTEGER NOT NULL,
+              leave_ts INTEGER,
+              seconds_total INTEGER NOT NULL DEFAULT 0,
+              seconds_credited INTEGER NOT NULL DEFAULT 0,
+              afk_filtered INTEGER NOT NULL DEFAULT 0,
+              meta_json TEXT NOT NULL DEFAULT '{}'
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_progression_core (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              coins_balance INTEGER NOT NULL DEFAULT 0,
+              coins_lifetime_earned INTEGER NOT NULL DEFAULT 0,
+              coins_lifetime_burned INTEGER NOT NULL DEFAULT 0,
+              activity_xp_hidden INTEGER NOT NULL DEFAULT 0,
+              orders_completed_7d INTEGER NOT NULL DEFAULT 0,
+              orders_late_7d INTEGER NOT NULL DEFAULT 0,
+              orders_failed_7d INTEGER NOT NULL DEFAULT 0,
+              orders_forfeited_7d INTEGER NOT NULL DEFAULT 0,
+              streak_current_days INTEGER NOT NULL DEFAULT 0,
+              streak_best_days INTEGER NOT NULL DEFAULT 0,
+              obedience_7d_cached INTEGER,
+              was_7d_cached INTEGER,
+              weekly_claim_last_week_key TEXT,
+              weekly_claim_last_amount INTEGER NOT NULL DEFAULT 0,
+              debt_amount INTEGER NOT NULL DEFAULT 0,
+              inactive_days_streak INTEGER NOT NULL DEFAULT 0,
+              last_qualifying_activity_ts INTEGER,
+              start_balance_granted INTEGER NOT NULL DEFAULT 0,
+              updated_at INTEGER NOT NULL DEFAULT 0,
+              PRIMARY KEY (guild_id, user_id)
+            );
+            """)
+
+            # Ensure start_balance_granted column exists for existing installations
+            await self._ensure_column("v3_progression_core", "start_balance_granted", "INTEGER NOT NULL DEFAULT 0", commit=False)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_ranks (
+              guild_id TEXT NOT NULL,
+              rank_id TEXT NOT NULL,
+              rank_index INTEGER NOT NULL,
+              rank_name TEXT NOT NULL,
+              description TEXT NOT NULL DEFAULT '',
+              role_id TEXT,
+              coin_band_min_lce INTEGER NOT NULL DEFAULT 0,
+              obedience_required INTEGER NOT NULL DEFAULT 0,
+              gates_json TEXT NOT NULL DEFAULT '{}',
+              PRIMARY KEY (guild_id, rank_id)
+            );
+            """)
+
+            # Ensure obedience_required column exists for existing installations
+            await self._ensure_column("v3_ranks", "obedience_required", "INTEGER NOT NULL DEFAULT 0", commit=False)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_rank_history (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              rank_id TEXT NOT NULL,
+              changed_ts INTEGER NOT NULL,
+              reason TEXT NOT NULL DEFAULT '',
+              actor_user_id TEXT,
+              note TEXT NOT NULL DEFAULT ''
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_orders (
+              order_id TEXT PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              order_type TEXT NOT NULL,
+              status TEXT NOT NULL,
+              issued_ts INTEGER NOT NULL,
+              due_ts INTEGER NOT NULL,
+              accepted_ts INTEGER,
+              completed_ts INTEGER,
+              reward_coins INTEGER NOT NULL DEFAULT 0,
+              penalty_debt INTEGER NOT NULL DEFAULT 0,
+              season_id TEXT,
+              meta_json TEXT NOT NULL DEFAULT '{}'
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_orders_daily (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              date_key TEXT NOT NULL,
+              completed INTEGER NOT NULL DEFAULT 0,
+              late INTEGER NOT NULL DEFAULT 0,
+              failed INTEGER NOT NULL DEFAULT 0,
+              forfeited INTEGER NOT NULL DEFAULT 0,
+              PRIMARY KEY (guild_id, user_id, date_key)
+            );
+            """)
+
+            await self.execute("""
+            CREATE INDEX IF NOT EXISTS idx_v3_orders_daily_user_date
+            ON v3_orders_daily(guild_id, user_id, date_key);
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_daily_challenges (
+              challenge_id TEXT PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              date_key TEXT NOT NULL,
+              challenge_type TEXT NOT NULL,
+              progress_current INTEGER NOT NULL DEFAULT 0,
+              progress_target INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'active',
+              reward_json TEXT NOT NULL DEFAULT '{}',
+              season_id TEXT,
+              created_ts INTEGER NOT NULL,
+              completed_ts INTEGER
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_longterm_goals (
+              goal_id TEXT PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              goal_type TEXT NOT NULL,
+              title TEXT NOT NULL,
+              description TEXT NOT NULL DEFAULT '',
+              is_hidden INTEGER NOT NULL DEFAULT 0,
+              progress_current INTEGER NOT NULL DEFAULT 0,
+              progress_target INTEGER NOT NULL DEFAULT 0,
+              status TEXT NOT NULL DEFAULT 'active',
+              reward_json TEXT NOT NULL DEFAULT '{}',
+              season_id TEXT,
+              created_ts INTEGER NOT NULL,
+              completed_ts INTEGER
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_achievements (
+              achievement_id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              description_public TEXT NOT NULL DEFAULT '',
+              is_hidden INTEGER NOT NULL DEFAULT 0,
+              criteria_json TEXT NOT NULL DEFAULT '{}'
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_user_achievements (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              achievement_id TEXT NOT NULL,
+              unlocked_ts INTEGER NOT NULL,
+              season_id TEXT,
+              PRIMARY KEY (guild_id, user_id, achievement_id)
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_items (
+              item_id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              type TEXT NOT NULL,
+              rarity TEXT NOT NULL DEFAULT 'common',
+              price_coins INTEGER NOT NULL DEFAULT 0,
+              is_seasonal INTEGER NOT NULL DEFAULT 0,
+              season_id TEXT,
+              metadata_json TEXT NOT NULL DEFAULT '{}'
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_user_inventory (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              item_id TEXT NOT NULL,
+              qty INTEGER NOT NULL DEFAULT 1,
+              acquired_ts INTEGER NOT NULL,
+              acquired_source TEXT NOT NULL DEFAULT '',
+              is_equipped INTEGER NOT NULL DEFAULT 0,
+              meta_json TEXT NOT NULL DEFAULT '{}',
+              PRIMARY KEY (guild_id, user_id, item_id)
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_transactions (
+              txn_id TEXT PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              direction TEXT NOT NULL,
+              amount INTEGER NOT NULL,
+              reason_code TEXT NOT NULL,
+              ref_type TEXT,
+              ref_id TEXT,
+              season_id TEXT,
+              flags_json TEXT NOT NULL DEFAULT '[]',
+              created_ts INTEGER NOT NULL
+            );
+            """)
+
+            await self.execute("""
+            CREATE INDEX IF NOT EXISTS idx_v3_transactions_user_time
+            ON v3_transactions(guild_id, user_id, created_ts);
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_transaction_summaries (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              period_type TEXT NOT NULL,
+              period_key TEXT NOT NULL,
+              earned_total INTEGER NOT NULL DEFAULT 0,
+              spent_total INTEGER NOT NULL DEFAULT 0,
+              net_total INTEGER NOT NULL DEFAULT 0,
+              top_sources_json TEXT NOT NULL DEFAULT '{}',
+              top_sinks_json TEXT NOT NULL DEFAULT '{}',
+              PRIMARY KEY (guild_id, user_id, period_type, period_key)
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_seasons (
+              season_id TEXT PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              name TEXT NOT NULL,
+              start_ts INTEGER NOT NULL,
+              end_ts INTEGER NOT NULL,
+              is_active INTEGER NOT NULL DEFAULT 0,
+              meta_json TEXT NOT NULL DEFAULT '{}'
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_user_season_stats (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              season_id TEXT NOT NULL,
+              season_currency_balance INTEGER NOT NULL DEFAULT 0,
+              season_currency_earned INTEGER NOT NULL DEFAULT 0,
+              season_msg_count INTEGER NOT NULL DEFAULT 0,
+              season_voice_seconds INTEGER NOT NULL DEFAULT 0,
+              season_was_points INTEGER NOT NULL DEFAULT 0,
+              season_activity_xp_hidden INTEGER NOT NULL DEFAULT 0,
+              season_orders_completed INTEGER NOT NULL DEFAULT 0,
+              season_orders_failed INTEGER NOT NULL DEFAULT 0,
+              season_tasks_completed INTEGER NOT NULL DEFAULT 0,
+              updated_at INTEGER NOT NULL DEFAULT 0,
+              PRIMARY KEY (guild_id, user_id, season_id)
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_leaderboard_snapshots (
+              snapshot_id TEXT PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              scope TEXT NOT NULL,
+              scope_key TEXT NOT NULL,
+              category TEXT NOT NULL,
+              generated_ts INTEGER NOT NULL,
+              payload_json TEXT NOT NULL DEFAULT '{}'
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_admin_notes (
+              note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              author_user_id TEXT NOT NULL,
+              note TEXT NOT NULL,
+              created_ts INTEGER NOT NULL
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_user_flags (
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              warnings_count INTEGER NOT NULL DEFAULT 0,
+              disciplines_count INTEGER NOT NULL DEFAULT 0,
+              safeword_applied INTEGER NOT NULL DEFAULT 0,
+              last_warning_ts INTEGER,
+              meta_json TEXT NOT NULL DEFAULT '{}',
+              PRIMARY KEY (guild_id, user_id)
+            );
+            """)
+
+            await self.execute("""
+            CREATE TABLE IF NOT EXISTS v3_privacy_requests (
+              request_id TEXT PRIMARY KEY,
+              guild_id TEXT NOT NULL,
+              user_id TEXT NOT NULL,
+              request_type TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'pending',
+              created_ts INTEGER NOT NULL,
+              closed_ts INTEGER
+            );
+            """)
+
         except Exception as e:
             print(f"Database migration error: {e}")
             print(f"Error type: {type(e).__name__}")
@@ -1280,4 +1715,361 @@ class Database:
             "UPDATE users SET safeword_until_ts=? WHERE guild_id=? AND user_id=?",
             (until_ts, gid, uid),
         )
+
+    # =========================
+    # V3 Helper Methods
+    # =========================
+
+    async def ensure_v3_guild(self, gid: int, name_cache: str | None = None):
+        """Ensure v3_guilds row exists."""
+        assert self.conn
+        import time
+        now = int(time.time())
+        await self.execute(
+            "INSERT OR IGNORE INTO v3_guilds(guild_id, created_at, name_cache) VALUES(?, ?, ?)",
+            (str(gid), now, name_cache)
+        )
+
+    async def ensure_v3_user(self, gid: int, uid: int, join_ts: int | None = None):
+        """Ensure v3_users row exists."""
+        assert self.conn
+        import time
+        now = int(time.time())
+        join = join_ts if join_ts is not None else now
+        await self.execute(
+            "INSERT OR IGNORE INTO v3_users(guild_id, user_id, created_at, join_ts) VALUES(?, ?, ?, ?)",
+            (str(gid), str(uid), now, join)
+        )
+
+    async def v3_set_last_seen(self, gid: int, uid: int, ts: int):
+        """Update last_seen_ts in v3_users."""
+        assert self.conn
+        await self.execute(
+            "UPDATE v3_users SET last_seen_ts=? WHERE guild_id=? AND user_id=?",
+            (ts, str(gid), str(uid))
+        )
+
+    async def v3_bump_message_daily(self, gid: int, uid: int, date_key: str, ts: int, inc: int = 1):
+        """Bump message count for a user on a specific date."""
+        assert self.conn
+        await self.execute(
+            """INSERT INTO v3_activity_daily(guild_id, user_id, date_key, message_count, last_msg_ts, first_msg_ts)
+               VALUES(?, ?, ?, ?, ?, ?)
+               ON CONFLICT(guild_id, user_id, date_key) DO UPDATE SET
+                 message_count=message_count+?,
+                 last_msg_ts=?,
+                 first_msg_ts=COALESCE(first_msg_ts, ?)""",
+            (str(gid), str(uid), date_key, inc, ts, ts, inc, ts, ts)
+        )
+
+    async def v3_bump_reaction_daily(self, gid: int, uid: int, date_key: str, ts: int, inc: int = 1):
+        """Bump reaction count for a user on a specific date."""
+        assert self.conn
+        await self.execute(
+            """INSERT INTO v3_activity_daily(guild_id, user_id, date_key, reaction_count)
+               VALUES(?, ?, ?, ?)
+               ON CONFLICT(guild_id, user_id, date_key) DO UPDATE SET reaction_count=reaction_count+?""",
+            (str(gid), str(uid), date_key, inc, inc)
+        )
+
+    async def v3_add_voice_seconds_daily(self, gid: int, uid: int, date_key: str, seconds: int, ts: int):
+        """Add voice seconds for a user on a specific date."""
+        assert self.conn
+        await self.execute(
+            """INSERT INTO v3_activity_daily(guild_id, user_id, date_key, voice_seconds, last_voice_ts)
+               VALUES(?, ?, ?, ?, ?)
+               ON CONFLICT(guild_id, user_id, date_key) DO UPDATE SET
+                 voice_seconds=voice_seconds+?,
+                 last_voice_ts=?""",
+            (str(gid), str(uid), date_key, seconds, ts, seconds, ts)
+        )
+
+    async def v3_track_message(self, gid: int, uid: int, date_key: str, ts: int, inc: int = 1, commit: bool = True):
+        """Combined helper: ensures v3_user exists, updates last_seen_ts, and bumps message count."""
+        assert self.conn
+        import time
+        if commit:
+            async with self.transaction():
+                await self._v3_track_message_internal(gid, uid, date_key, ts, inc)
+        else:
+            await self._v3_track_message_internal(gid, uid, date_key, ts, inc)
+
+    async def _v3_track_message_internal(self, gid: int, uid: int, date_key: str, ts: int, inc: int):
+        """Internal helper for v3_track_message (no commit handling)."""
+        import time
+        now = int(time.time())
+        # Ensure v3_user exists
+        await self.execute(
+            "INSERT OR IGNORE INTO v3_users(guild_id, user_id, created_at, join_ts) VALUES(?, ?, ?, ?)",
+            (str(gid), str(uid), ts, ts),
+            commit=False
+        )
+        # Update last_seen_ts
+        await self.execute(
+            "UPDATE v3_users SET last_seen_ts=? WHERE guild_id=? AND user_id=?",
+            (ts, str(gid), str(uid)),
+            commit=False
+        )
+        # Bump message count
+        await self.execute(
+            """INSERT INTO v3_activity_daily(guild_id, user_id, date_key, message_count, last_msg_ts, first_msg_ts)
+               VALUES(?, ?, ?, ?, ?, ?)
+               ON CONFLICT(guild_id, user_id, date_key) DO UPDATE SET
+                 message_count=message_count+?,
+                 last_msg_ts=?,
+                 first_msg_ts=COALESCE(first_msg_ts, ?)""",
+            (str(gid), str(uid), date_key, inc, ts, ts, inc, ts, ts),
+            commit=False
+        )
+
+    async def v3_track_reaction(self, gid: int, uid: int, date_key: str, ts: int, inc: int = 1, commit: bool = True):
+        """Combined helper: ensures v3_user exists, updates last_seen_ts, and bumps reaction count."""
+        assert self.conn
+        if commit:
+            async with self.transaction():
+                await self._v3_track_reaction_internal(gid, uid, date_key, ts, inc)
+        else:
+            await self._v3_track_reaction_internal(gid, uid, date_key, ts, inc)
+
+    async def _v3_track_reaction_internal(self, gid: int, uid: int, date_key: str, ts: int, inc: int):
+        """Internal helper for v3_track_reaction (no commit handling)."""
+        import time
+        # Ensure v3_user exists
+        await self.execute(
+            "INSERT OR IGNORE INTO v3_users(guild_id, user_id, created_at, join_ts) VALUES(?, ?, ?, ?)",
+            (str(gid), str(uid), ts, ts),
+            commit=False
+        )
+        # Update last_seen_ts
+        await self.execute(
+            "UPDATE v3_users SET last_seen_ts=? WHERE guild_id=? AND user_id=?",
+            (ts, str(gid), str(uid)),
+            commit=False
+        )
+        # Bump reaction count
+        await self.execute(
+            """INSERT INTO v3_activity_daily(guild_id, user_id, date_key, reaction_count)
+               VALUES(?, ?, ?, ?)
+               ON CONFLICT(guild_id, user_id, date_key) DO UPDATE SET reaction_count=reaction_count+?""",
+            (str(gid), str(uid), date_key, inc, inc),
+            commit=False
+        )
+
+    async def v3_track_voice_seconds(self, gid: int, uid: int, date_key: str, ts: int, seconds: int, commit: bool = True):
+        """Combined helper: ensures v3_user exists, updates last_seen_ts, and adds voice seconds."""
+        assert self.conn
+        if commit:
+            async with self.transaction():
+                await self._v3_track_voice_seconds_internal(gid, uid, date_key, ts, seconds)
+        else:
+            await self._v3_track_voice_seconds_internal(gid, uid, date_key, ts, seconds)
+
+    async def _v3_track_voice_seconds_internal(self, gid: int, uid: int, date_key: str, ts: int, seconds: int):
+        """Internal helper for v3_track_voice_seconds (no commit handling)."""
+        import time
+        # Ensure v3_user exists
+        await self.execute(
+            "INSERT OR IGNORE INTO v3_users(guild_id, user_id, created_at, join_ts) VALUES(?, ?, ?, ?)",
+            (str(gid), str(uid), ts, ts),
+            commit=False
+        )
+        # Update last_seen_ts
+        await self.execute(
+            "UPDATE v3_users SET last_seen_ts=? WHERE guild_id=? AND user_id=?",
+            (ts, str(gid), str(uid)),
+            commit=False
+        )
+        # Add voice seconds
+        await self.execute(
+            """INSERT INTO v3_activity_daily(guild_id, user_id, date_key, voice_seconds, last_voice_ts)
+               VALUES(?, ?, ?, ?, ?)
+               ON CONFLICT(guild_id, user_id, date_key) DO UPDATE SET
+                 voice_seconds=voice_seconds+?,
+                 last_voice_ts=?""",
+            (str(gid), str(uid), date_key, seconds, ts, seconds, ts),
+            commit=False
+        )
+
+    async def v3_apply_coins_delta(
+        self, gid: int, uid: int, delta: int, counts_toward_lce: bool, reason_code: str,
+        ref_type: str | None = None, ref_id: str | None = None, season_id: str | None = None,
+        flags_json: str = "[]", commit: bool = True
+    ):
+        """Apply coins delta and record transaction."""
+        assert self.conn
+        import time
+        import uuid
+        now = int(time.time())
+        txn_id = str(uuid.uuid4())
+        direction = "credit" if delta > 0 else "debit"
+        amount = abs(delta)
+
+        # Record transaction
+        await self.execute(
+            """INSERT INTO v3_transactions(txn_id, guild_id, user_id, direction, amount, reason_code, ref_type, ref_id, season_id, flags_json, created_ts)
+               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (txn_id, str(gid), str(uid), direction, amount, reason_code, ref_type, ref_id, season_id, flags_json, now),
+            commit=commit
+        )
+
+        # Update progression_core
+        if counts_toward_lce and delta > 0:
+            await self.execute(
+                """INSERT INTO v3_progression_core(guild_id, user_id, coins_balance, coins_lifetime_earned, updated_at)
+                   VALUES(?, ?, ?, ?, ?)
+                   ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                     coins_balance=coins_balance+?,
+                     coins_lifetime_earned=coins_lifetime_earned+?,
+                     updated_at=?""",
+                (str(gid), str(uid), delta, delta, now, delta, delta, now),
+                commit=commit
+            )
+        else:
+            await self.execute(
+                """INSERT INTO v3_progression_core(guild_id, user_id, coins_balance, updated_at)
+                   VALUES(?, ?, ?, ?)
+                   ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                     coins_balance=coins_balance+?,
+                     updated_at=?""",
+                (str(gid), str(uid), delta, now, delta, now),
+                commit=commit
+            )
+
+    async def v3_recompute_was_7d(self, gid: int, uid: int, last_7_date_keys: list[str]) -> int:
+        """Recompute 7-day WAS from v3_activity_daily and store in v3_progression_core."""
+        assert self.conn
+        import time
+        if not last_7_date_keys:
+            return 0
+
+        placeholders = ",".join(["?"] * len(last_7_date_keys))
+        row = await self.fetchone(
+            f"""
+            SELECT
+              COALESCE(SUM(message_count), 0) AS msg,
+              COALESCE(SUM(reaction_count), 0) AS react,
+              COALESCE(SUM(voice_seconds), 0) AS voice_sec
+            FROM v3_activity_daily
+            WHERE guild_id=? AND user_id=? AND date_key IN ({placeholders})
+            """,
+            [str(gid), str(uid)] + last_7_date_keys,
+        )
+
+        msg = int(row["msg"]) if row else 0
+        react = int(row["react"]) if row else 0
+        voice_sec = int(row["voice_sec"]) if row else 0
+
+        voice_minutes = voice_sec // 60
+        was = int(msg * 3 + react * 1 + min(voice_minutes, 600) * 2)
+
+        now = int(time.time())
+        await self.execute(
+            """INSERT INTO v3_progression_core(guild_id, user_id, was_7d_cached, updated_at)
+               VALUES(?,?,?,?)
+               ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                 was_7d_cached=?,
+                 updated_at=?""",
+            (str(gid), str(uid), was, now, was, now)
+        )
+        return was
+
+    async def v3_recompute_obedience_7d(self, gid: int, uid: int, last_7_date_keys: list[str]) -> int:
+        """Recompute obedience 7-day window and store in v3_progression_core."""
+        assert self.conn
+        import time
+        if not last_7_date_keys:
+            return 0
+
+        placeholders = ",".join(["?"] * len(last_7_date_keys))
+        row = await self.fetchone(
+            f"""
+            SELECT
+              COALESCE(SUM(completed), 0) AS comp,
+              COALESCE(SUM(late), 0) AS late,
+              COALESCE(SUM(failed), 0) AS failed,
+              COALESCE(SUM(forfeited), 0) AS forfeit
+            FROM v3_orders_daily
+            WHERE guild_id=? AND user_id=? AND date_key IN ({placeholders})
+            """,
+            [str(gid), str(uid)] + last_7_date_keys,
+        )
+
+        comp = int(row["comp"]) if row else 0
+        late = int(row["late"]) if row else 0
+        failed = int(row["failed"]) if row else 0
+        forfeit = int(row["forfeit"]) if row else 0
+
+        obedience = comp - (late + failed + forfeit)
+
+        now = int(time.time())
+        await self.execute(
+            """INSERT INTO v3_progression_core(guild_id, user_id, orders_completed_7d, orders_late_7d, orders_failed_7d, orders_forfeited_7d, obedience_7d_cached, updated_at)
+               VALUES(?,?,?,?,?,?,?,?)
+               ON CONFLICT(guild_id, user_id) DO UPDATE SET
+                 orders_completed_7d=?,
+                 orders_late_7d=?,
+                 orders_failed_7d=?,
+                 orders_forfeited_7d=?,
+                 obedience_7d_cached=?,
+                 updated_at=?""",
+            (str(gid), str(uid), comp, late, failed, forfeit, obedience, now,
+             comp, late, failed, forfeit, obedience, now)
+        )
+        return obedience
+
+    async def v3_grant_start_balance_once(self, gid: int, uid: int, amount: int):
+        """Grant start balance exactly once per user (idempotent)."""
+        assert self.conn
+        import time
+        if amount <= 0:
+            return
+        
+        async with self.transaction():
+            # Ensure progression_core row exists
+            await self.execute(
+                """INSERT OR IGNORE INTO v3_progression_core(guild_id, user_id, updated_at)
+                   VALUES(?, ?, ?)""",
+                (str(gid), str(uid), int(time.time())),
+                commit=False
+            )
+            
+            # Check if already granted
+            row = await self.fetchone(
+                "SELECT start_balance_granted FROM v3_progression_core WHERE guild_id=? AND user_id=?",
+                (str(gid), str(uid))
+            )
+            
+            if row and int(row["start_balance_granted"] or 0) != 0:
+                return  # Already granted
+            
+            # Grant the balance
+            await self.v3_apply_coins_delta(
+                gid, uid, delta=amount, counts_toward_lce=True,
+                reason_code="start_balance", ref_type="system",
+                commit=False
+            )
+            
+            # Mark as granted
+            await self.execute(
+                "UPDATE v3_progression_core SET start_balance_granted=1 WHERE guild_id=? AND user_id=?",
+                (str(gid), str(uid)),
+                commit=False
+            )
+
+    async def v3_wipe_user(self, gid: int, uid: int):
+        """Hard delete all v3_* rows for a user (privacy-safe)."""
+        assert self.conn
+        v3_tables = [
+            "v3_users", "v3_user_profile", "v3_activity_daily", "v3_voice_sessions",
+            "v3_progression_core", "v3_rank_history", "v3_orders_daily",
+            "v3_orders", "v3_daily_challenges", "v3_longterm_goals",
+            "v3_user_achievements", "v3_user_inventory", "v3_user_season_stats",
+            "v3_admin_notes", "v3_user_flags", "v3_privacy_requests",
+            "v3_transactions", "v3_transaction_summaries"
+        ]
+        for table in v3_tables:
+            try:
+                await self.execute(f"DELETE FROM {table} WHERE guild_id=? AND user_id=?", (str(gid), str(uid)))
+            except Exception:
+                pass  # Table might not exist, ignore
 

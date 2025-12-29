@@ -9,16 +9,21 @@ from discord import app_commands
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from core.utils import now_ts, fmt
-from core.isla_text import sanitize_isla_text
-from core.seasonal_configs import SEASONAL_CONFIGS, get_seasonal_config
-from core.seasonal_tones import SEASONAL_TONE_POOLS, get_seasonal_tone
-from core.holiday_configs import HOLIDAY_CONFIGS, get_holiday_config, get_all_holidays, parse_holiday_date
-from core.boss_damage import (
+from core.utility import now_ts, fmt
+from core.personality import sanitize_isla_text
+from core.events import (
+    SEASONAL_CONFIGS, get_seasonal_config,
+    SEASONAL_TONE_POOLS, get_seasonal_tone,
+    HOLIDAY_CONFIGS, get_holiday_config, get_all_holidays, parse_holiday_date,
     calculate_daily_damage, calculate_global_scale, calculate_boss_hp_from_users,
     calculate_expected_daily_damage, calculate_voice_effective_minutes,
     g_log_scale, K_TS, K_CN, K_CW, K_M, K_V
 )
+from utils.uk_time import uk_day_ymd, uk_hm
+from utils.uk_parse import parse_when_to_ts, human_eta
+from utils.isla_style import isla_embed as isla_embed_util
+from utils.economy import ensure_wallet, get_wallet, add_coins
+from utils.embed_utils import create_embed
 
 UK_TZ = ZoneInfo("Europe/London")
 
@@ -96,6 +101,39 @@ def hp_bar(current: int, maximum: int, width: int = 14) -> str:
     filled = clamp(filled, 0, width)
     return "█" * filled + "░" * (width - filled)
 
+# DP (Damage Points) calculation helpers (from event_group/event_scheduler)
+VC_REDUCED_MULT = 0.35
+k_TS = 25.0
+k_CN = 10_000.0
+k_CW = 20_000.0
+k_M = 20.0
+k_V = 30.0
+
+def g_dp(x: float, k: float) -> float:
+    """Log scaling function for DP calculation."""
+    return math.log(1.0 + (x / k))
+
+def compute_dp(msg_count: int, vc_minutes: int, vc_reduced_minutes: int,
+               ritual_done: int, tokens_spent: int, casino_wager: int, casino_net: int) -> float:
+    """Compute Damage Points using logarithmic scaling."""
+    V_eff = float(vc_minutes) + (float(vc_reduced_minutes) * VC_REDUCED_MULT)
+    CN_pos = max(int(casino_net), 0)
+    return (
+        260.0 * g_dp(tokens_spent, k_TS) +
+        160.0 * (1 if ritual_done else 0) +
+        110.0 * g_dp(CN_pos, k_CN) +
+        95.0 * g_dp(casino_wager, k_CW) +
+        80.0 * g_dp(msg_count, k_M) +
+        80.0 * g_dp(V_eff, k_V)
+    )
+
+def fmt_int(n: int | float) -> str:
+    """Format integer with commas."""
+    try:
+        return f"{int(n):,}"
+    except Exception:
+        return "0"
+
 
 # ---------------------------------------------------------
 # EventSystem Cog
@@ -104,11 +142,24 @@ class EventSystem(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.icon = "https://i.imgur.com/5nsuuCV.png"  # default author icon
+        
+        # Initialize command groups
+        self.event = app_commands.Group(name="event", description="Event commands")
+        self.calendar = app_commands.Group(name="calendar", description="Server calendar events")
+        self._register_command_groups()
+        
+        # Start task loops
         self.tick_events.start()
         self.tick_boss.start()
         self.tick_quest_refresh.start()
         self.tick_seasonal_finale.start()
         self.tick_holiday_weeks.start()
+        self.flush_loop.start()
+        self.boss_dp_loop.start()
+        
+        # Scheduler config
+        self.orders_channel_id = int(bot.cfg.get("channels", "orders", default="0") or 0)
+        self.spotlight_channel_id = int(bot.cfg.get("channels", "spotlight", default="0") or 0)
     
     async def get_active_event_ids(self, guild_id: int) -> list[str]:
         """
@@ -128,6 +179,24 @@ class EventSystem(commands.Cog):
         self.tick_quest_refresh.cancel()
         self.tick_seasonal_finale.cancel()
         self.tick_holiday_weeks.cancel()
+        self.flush_loop.cancel()
+        self.boss_dp_loop.cancel()
+    
+    def _register_command_groups(self):
+        """Register /event and /calendar group commands."""
+        # /event group commands
+        self.event.command(name="info", description="View current event info.")(self._cmd_event_info)
+        self.event.command(name="boss", description="View the current event boss.")(self._cmd_event_boss)
+        self.event.command(name="progress", description="View boss progress and your contribution today.")(self._cmd_event_progress)
+        self.event.command(name="leaderboard", description="View event leaderboards.")(self._cmd_event_leaderboard)
+        self.event.command(name="ritual", description="View today's ritual info.")(self._cmd_event_ritual)
+        self.event.command(name="shop", description="View the event shop info.")(self._cmd_event_shop)
+        
+        # /calendar group commands
+        self.calendar.command(name="create", description="Interactive event wizard.")(self._cmd_calendar_create)
+        self.calendar.command(name="list", description="Upcoming events.")(self._cmd_calendar_list)
+        self.calendar.command(name="join", description="Join event and get role.")(self._cmd_calendar_join)
+        self.calendar.command(name="leave", description="Leave an event.")(self._cmd_calendar_leave)
 
     # -------------------------
     # Config getters
@@ -276,7 +345,7 @@ class EventSystem(commands.Cog):
             return False, "Message tracking not available."
 
         if rtype == "vc_minutes":
-            vt = self.bot.get_cog("VoiceTracker")
+            vt = self.bot.get_cog("Data")
             if not vt:
                 return False, "Voice tracking not available."
             need = int(requirement.get("minutes", 5))
@@ -387,7 +456,7 @@ class EventSystem(commands.Cog):
     # =========================================================
     #  A) PUBLIC COMMANDS
     # =========================================================
-    # Removed: /event command (now handled by event_group.py)
+    # Note: /event group commands are now in section D) below
     # @app_commands.command(name="event", description="View the current active season/holiday, boss fight, and questboard.")
     async def _event_legacy(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -561,7 +630,7 @@ class EventSystem(commands.Cog):
                 (gid, interaction.user.id, scope_id, total_tokens, now_ts())
             )
             # Forward token earning to EventActivityTracker (for ledger audit)
-            tracker = self.bot.get_cog("EventActivityTracker")
+            tracker = self.bot.get_cog("Data")
             if tracker:
                 try:
                     # Find the active event_id (could be wrapper or boss)
@@ -633,6 +702,106 @@ class EventSystem(commands.Cog):
         e = self._embed(None, desc, thumb_url=self._thumb(cfg, thumb_key))
         await interaction.followup.send(embed=e, ephemeral=True)
 
+    @app_commands.command(name="event_boss", description="View the current event boss status (standalone).")
+    async def event_boss_standalone(self, interaction: discord.Interaction):
+        """Standalone /event_boss command (for backward compatibility)."""
+        await interaction.response.defer(ephemeral=True)
+        if not interaction.guild_id:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        gid = interaction.guild_id
+        event_id = await self._pick_active_event_for_dp(gid)
+        if not event_id:
+            return await interaction.followup.send(
+                embed=self._embed("No active event boss right now.\n᲼᲼", "Boss", thumb_url=self.icon),
+                ephemeral=True
+            )
+        
+        meta = await self.bot.db.fetchone(
+            "SELECT name, event_type, token_name FROM events WHERE guild_id=? AND event_id=?",
+            (gid, event_id)
+        )
+        boss = await self.bot.db.fetchone(
+            "SELECT boss_name, hp_current, hp_max FROM event_boss WHERE guild_id=? AND event_id=?",
+            (gid, event_id)
+        )
+        if not boss:
+            return await interaction.followup.send(
+                embed=self._embed("No boss is attached to the current event.\n᲼᲼", "Boss", thumb_url=self.icon),
+                ephemeral=True
+            )
+        
+        boss_name = str(boss["boss_name"])
+        hp_cur = int(boss["hp_current"])
+        hp_max = max(1, int(boss["hp_max"]))
+        hp_pct = max(0, min(100, int((hp_cur / hp_max) * 100)))
+        
+        today = uk_day_ymd(now_ts())
+        top_today = await self.bot.db.fetchall(
+            "SELECT user_id, dp_cached AS pts FROM event_user_day WHERE guild_id=? AND event_id=? AND day_ymd=? ORDER BY pts DESC LIMIT 3",
+            (gid, event_id, today)
+        )
+        top_overall = await self.bot.db.fetchall(
+            "SELECT user_id, SUM(dp_cached) AS pts FROM event_user_day WHERE guild_id=? AND event_id=? GROUP BY user_id ORDER BY pts DESC LIMIT 10",
+            (gid, event_id)
+        )
+        
+        recent_damage = None
+        try:
+            cutoff = now_ts() - (6 * 3600)
+            r = await self.bot.db.fetchone(
+                "SELECT COALESCE(SUM(damage_total), 0) AS dmg FROM event_boss_tick WHERE guild_id=? AND event_id=? AND ts >= ?",
+                (gid, event_id, cutoff)
+            )
+            recent_damage = int(float(r["dmg"] or 0))
+        except Exception:
+            recent_damage = None
+        
+        def line_for(uid: int, pts: float) -> str:
+            m = interaction.guild.get_member(int(uid))
+            name = m.display_name if m else f"User {uid}"
+            return f"{name} — {fmt_int(pts)}"
+        
+        today_lines = [f"{i}) {line_for(int(r['user_id']), float(r['pts'] or 0))}" for i, r in enumerate(top_today, start=1)]
+        overall_lines = [f"{i}) {line_for(int(r['user_id']), float(r['pts'] or 0))}" for i, r in enumerate(top_overall, start=1)]
+        if not today_lines:
+            today_lines = ["No data yet."]
+        if not overall_lines:
+            overall_lines = ["No data yet."]
+        
+        event_name = str(meta["name"]) if meta else "Event"
+        event_type = str(meta["event_type"]) if meta else "event"
+        token_name = str(meta["token_name"]) if meta else "Tokens"
+        
+        desc = f"**{boss_name}**\nHP: **{fmt_int(hp_cur)} / {fmt_int(hp_max)}** (**{hp_pct}%**)\n"
+        if recent_damage is not None:
+            desc += f"Recent damage (6h): **{fmt_int(recent_damage)}**\n"
+        desc += "᲼᲼"
+        
+        e = self._embed(desc, f"{event_name} Boss", thumb_url=self.icon)
+        e.add_field(name="Top Damage Today", value="\n".join(today_lines), inline=False)
+        e.add_field(name="Top Damage Overall", value="\n".join(overall_lines[:10]), inline=False)
+        e.add_field(name="Event", value=f"{event_type}\nToken: {token_name}", inline=True)
+        e.set_footer(text="Use /event to see more event options.")
+        await interaction.followup.send(embed=e, ephemeral=True)
+    
+    async def _pick_active_event_for_dp(self, gid: int) -> str | None:
+        """Pick active event ID for DP system."""
+        rows = await self.bot.db.fetchall(
+            "SELECT event_id, event_type FROM events WHERE guild_id=? AND is_active=1",
+            (gid,)
+        )
+        if not rows:
+            return None
+        for r in rows:
+            if str(r["event_type"]) == "holiday_week":
+                return str(r["event_id"])
+        for r in rows:
+            if str(r["event_type"]) == "season_era":
+                return str(r["event_id"])
+        return str(rows[0]["event_id"]) if rows else None
+    
     @app_commands.command(name="season_shop", description="View the season shop (token store).")
     async def season_shop(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -872,7 +1041,7 @@ class EventSystem(commands.Cog):
                 (reroll_cost_tokens, now_ts(), gid, interaction.user.id, scope_id)
             )
             # Forward token spending to EventActivityTracker
-            tracker = self.bot.get_cog("EventActivityTracker")
+            tracker = self.bot.get_cog("Data")
             if tracker:
                 try:
                     event_row = await self.bot.db.fetchone(
@@ -1387,8 +1556,8 @@ class EventSystem(commands.Cog):
         end = now
 
         # Pull activity from your tracker cogs (must exist)
-        mt = self.bot.get_cog("MessageTracker")
-        vt = self.bot.get_cog("VoiceTracker")
+        mt = self.bot.get_cog("Data")
+        vt = self.bot.get_cog("Data")
         cc = self.bot.get_cog("CasinoCore")
         oc = self.bot.get_cog("Orders")  # optional: only if you log completions
 
@@ -2058,7 +2227,572 @@ class EventSystem(commands.Cog):
         thumb = self._thumb(boss_cfg, "THUMB_INTRIGUED")
         e = self._embed(None, desc, thumb_url=thumb)
         await spotlight.send(embed=e)
+    
+    # =========================================================
+    #  D) /event GROUP COMMANDS (from event_group.py)
+    # =========================================================
+    
+    async def _get_active_events(self, gid: int) -> list[dict]:
+        """Get list of active events (for DP system)."""
+        return await self.bot.db.fetchall(
+            "SELECT event_id, event_type, name, token_name, start_ts, end_ts, climax_ts FROM events WHERE guild_id=? AND is_active=1",
+            (gid,)
+        )
+    
+    async def _pick_current_event(self, gid: int) -> dict | None:
+        """Pick current event (priority: holiday_week > season_era > others)."""
+        rows = await self._get_active_events(gid)
+        if not rows:
+            return None
+        for r in rows:
+            if str(r["event_type"]) == "holiday_week":
+                return dict(r)
+        for r in rows:
+            if str(r["event_type"]) == "season_era":
+                return dict(r)
+        return dict(rows[0]) if rows else None
+    
+    async def _cmd_event_info(self, interaction: discord.Interaction):
+        """/event info - View current event info."""
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        ev = await self._pick_current_event(gid)
+        if not ev:
+            return await interaction.followup.send(embed=self._embed("No event going on right now.\n᲼᲼", None, thumb_url=self.icon), ephemeral=True)
+        
+        desc = (
+            "Hey.\n\n"
+            f"Current event:\n**{ev['name']}**\n\n"
+            f"Type: **{ev['event_type']}**\n"
+            f"Token: **{ev['token_name']}**\n"
+            "᲼᲼"
+        )
+        e = self._embed(desc, "Event Info", thumb_url=self.icon)
+        e.add_field(
+            name="Commands",
+            value=("• `/event boss`\n• `/event progress`\n• `/event leaderboard`\n• `/event ritual`\n• `/event shop`\n"),
+            inline=False
+        )
+        e.set_footer(text="If this looks empty, it means people haven't moved yet.")
+        await interaction.followup.send(embed=e, ephemeral=True)
+    
+    async def _cmd_event_boss(self, interaction: discord.Interaction):
+        """/event boss - View the current event boss."""
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        ev = await self._pick_current_event(gid)
+        if not ev:
+            return await interaction.followup.send(embed=self._embed("No event going on right now.\n᲼᲼", None, thumb_url=self.icon), ephemeral=True)
+        
+        event_id = str(ev["event_id"])
+        boss = await self.bot.db.fetchone(
+            "SELECT boss_name, hp_current, hp_max FROM event_boss WHERE guild_id=? AND event_id=?",
+            (gid, event_id)
+        )
+        if not boss:
+            return await interaction.followup.send(embed=self._embed("No boss is attached to the current event.\n᲼᲼", "Boss", thumb_url=self.icon), ephemeral=True)
+        
+        boss_name = str(boss["boss_name"])
+        hp_cur = int(boss["hp_current"])
+        hp_max = max(1, int(boss["hp_max"]))
+        hp_pct = max(0, min(100, int((hp_cur / hp_max) * 100)))
+        
+        today = uk_day_ymd(now_ts())
+        top_today = await self.bot.db.fetchall(
+            "SELECT user_id, dp_cached AS pts FROM event_user_day WHERE guild_id=? AND event_id=? AND day_ymd=? ORDER BY pts DESC LIMIT 3",
+            (gid, event_id, today)
+        )
+        top_overall = await self.bot.db.fetchall(
+            "SELECT user_id, SUM(dp_cached) AS pts FROM event_user_day WHERE guild_id=? AND event_id=? GROUP BY user_id ORDER BY pts DESC LIMIT 10",
+            (gid, event_id)
+        )
+        
+        recent_damage = None
+        try:
+            cutoff = now_ts() - (6 * 3600)
+            r = await self.bot.db.fetchone(
+                "SELECT COALESCE(SUM(damage_total), 0) AS dmg FROM event_boss_tick WHERE guild_id=? AND event_id=? AND ts >= ?",
+                (gid, event_id, cutoff)
+            )
+            recent_damage = int(float(r["dmg"] or 0))
+        except Exception:
+            recent_damage = None
+        
+        def line_for(uid: int, pts: float) -> str:
+            m = interaction.guild.get_member(int(uid))
+            name = m.display_name if m else f"User {uid}"
+            return f"{name} — {fmt_int(pts)}"
+        
+        today_lines = [f"{i}) {line_for(int(r['user_id']), float(r['pts'] or 0))}" for i, r in enumerate(top_today, start=1)]
+        overall_lines = [f"{i}) {line_for(int(r['user_id']), float(r['pts'] or 0))}" for i, r in enumerate(top_overall, start=1)]
+        if not today_lines:
+            today_lines = ["No data yet."]
+        if not overall_lines:
+            overall_lines = ["No data yet."]
+        
+        desc = f"**{boss_name}**\nHP: **{fmt_int(hp_cur)} / {fmt_int(hp_max)}** (**{hp_pct}%**)\n"
+        if recent_damage is not None:
+            desc += f"Recent damage (6h): **{fmt_int(recent_damage)}**\n"
+        desc += "᲼᲼"
+        
+        e = self._embed(desc, f"{ev['name']} Boss", thumb_url=self.icon)
+        e.add_field(name="Top Damage Today", value="\n".join(today_lines), inline=False)
+        e.add_field(name="Top Damage Overall", value="\n".join(overall_lines[:10]), inline=False)
+        e.set_footer(text="Use /event leaderboard for the full ranking.")
+        await interaction.followup.send(embed=e, ephemeral=True)
+    
+    async def _cmd_event_progress(self, interaction: discord.Interaction):
+        """/event progress - View boss progress and your contribution today."""
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        uid = interaction.user.id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        ev = await self._pick_current_event(gid)
+        if not ev:
+            return await interaction.followup.send(embed=self._embed("No event going on right now.\n᲼᲼", None, thumb_url=self.icon), ephemeral=True)
+        
+        event_id = str(ev["event_id"])
+        today = uk_day_ymd(now_ts())
+        
+        boss = await self.bot.db.fetchone(
+            "SELECT boss_name, hp_current, hp_max FROM event_boss WHERE guild_id=? AND event_id=?",
+            (gid, event_id)
+        )
+        me = await self.bot.db.fetchone(
+            "SELECT msg_count, vc_minutes, vc_reduced_minutes, ritual_done, tokens_spent, casino_wager, casino_net, dp_cached FROM event_user_day WHERE guild_id=? AND event_id=? AND user_id=? AND day_ymd=?",
+            (gid, event_id, uid, today)
+        )
+        
+        desc = "Progress check.\n᲼᲼"
+        e = self._embed(desc, "Event Progress", thumb_url=self.icon)
+        
+        if boss:
+            hp_cur = int(boss["hp_current"])
+            hp_max = max(1, int(boss["hp_max"]))
+            hp_pct = max(0, min(100, int((hp_cur / hp_max) * 100)))
+            e.add_field(
+                name="Boss",
+                value=f"{boss['boss_name']}\nHP: {fmt_int(hp_cur)}/{fmt_int(hp_max)} ({hp_pct}%)",
+                inline=False
+            )
+        
+        if me:
+            approx = compute_dp(
+                int(me["msg_count"] or 0),
+                int(me["vc_minutes"] or 0),
+                int(me["vc_reduced_minutes"] or 0),
+                int(me["ritual_done"] or 0),
+                int(me["tokens_spent"] or 0),
+                int(me["casino_wager"] or 0),
+                int(me["casino_net"] or 0),
+            )
+            e.add_field(
+                name="You Today",
+                value=(
+                    f"Damage: **{fmt_int(approx)}**\n"
+                    f"Messages: {fmt_int(me['msg_count'] or 0)}\n"
+                    f"Voice: {fmt_int(me['vc_minutes'] or 0)}m (+{fmt_int(me['vc_reduced_minutes'] or 0)}m reduced)\n"
+                    f"Ritual: {'Done' if int(me['ritual_done'] or 0) else 'Not yet'}\n"
+                    f"Tokens spent: {fmt_int(me['tokens_spent'] or 0)}\n"
+                ),
+                inline=False
+            )
+        else:
+            e.add_field(name="You Today", value="No activity recorded yet.\nSay something or hop in voice.\n᲼᲼", inline=False)
+        
+        await interaction.followup.send(embed=e, ephemeral=True)
+    
+    async def _cmd_event_leaderboard(self, interaction: discord.Interaction):
+        """/event leaderboard - View event leaderboards."""
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        ev = await self._pick_current_event(gid)
+        if not ev:
+            return await interaction.followup.send(embed=self._embed("No event going on right now.\n᲼᲼", None, thumb_url=self.icon), ephemeral=True)
+        
+        event_id = str(ev["event_id"])
+        today = uk_day_ymd(now_ts())
+        
+        top_overall = await self.bot.db.fetchall(
+            "SELECT user_id, SUM(dp_cached) AS pts FROM event_user_day WHERE guild_id=? AND event_id=? GROUP BY user_id ORDER BY pts DESC LIMIT 10",
+            (gid, event_id)
+        )
+        top_today = await self.bot.db.fetchall(
+            "SELECT user_id, dp_cached AS pts FROM event_user_day WHERE guild_id=? AND event_id=? AND day_ymd=? ORDER BY pts DESC LIMIT 10",
+            (gid, event_id, today)
+        )
+        
+        def line_for(rank: int, uid: int, pts: float) -> str:
+            m = interaction.guild.get_member(uid)
+            name = m.display_name if m else f"User {uid}"
+            return f"{rank}) {name} — {fmt_int(pts)}"
+        
+        overall_lines = [line_for(i, int(r["user_id"]), float(r["pts"] or 0)) for i, r in enumerate(top_overall, start=1)]
+        today_lines = [line_for(i, int(r["user_id"]), float(r["pts"] or 0)) for i, r in enumerate(top_today, start=1)]
+        
+        if not overall_lines:
+            overall_lines = ["No data yet."]
+        if not today_lines:
+            today_lines = ["No data yet."]
+        
+        e = self._embed("Here's the ranking.\n᲼᲼", f"{ev['name']} Leaderboard", thumb_url=self.icon)
+        e.add_field(name="Top Overall", value="\n".join(overall_lines), inline=False)
+        e.add_field(name="Top Today", value="\n".join(today_lines), inline=False)
+        await interaction.followup.send(embed=e, ephemeral=True)
+    
+    async def _cmd_event_ritual(self, interaction: discord.Interaction):
+        """/event ritual - View today's ritual info."""
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        ev = await self._pick_current_event(gid)
+        if not ev:
+            return await interaction.followup.send(embed=self._embed("No event going on right now.\n᲼᲼", None, thumb_url=self.icon), ephemeral=True)
+        
+        e = self._embed(
+            "Ritual is available.\n\nIf you have a ritual task posted, complete it once today.\nThen come back and check `/event progress`.\n᲼᲼",
+            "Ritual",
+            thumb_url=self.icon
+        )
+        await interaction.followup.send(embed=e, ephemeral=True)
+    
+    async def _cmd_event_shop(self, interaction: discord.Interaction):
+        """/event shop - View the event shop info."""
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        ev = await self._pick_current_event(gid)
+        if not ev:
+            return await interaction.followup.send(embed=self._embed("No event going on right now.\n᲼᲼", None, thumb_url=self.icon), ephemeral=True)
+        
+        e = self._embed("Event shop is open while the event is active.\n\nSpend event tokens on limited items.\n᲼᲼", "Event Shop", thumb_url=self.icon)
+        await interaction.followup.send(embed=e, ephemeral=True)
+    
+    # =========================================================
+    #  E) DP SYSTEM TASK LOOPS (from event_scheduler.py)
+    # =========================================================
+    
+    @tasks.loop(seconds=60)
+    async def flush_loop(self):
+        """Flush message and voice counters."""
+        await self.bot.wait_until_ready()
+        data_cog = self.bot.get_cog("Data")
+        if data_cog:
+            try:
+                await data_cog.flush_message_counters(self.bot.db)
+                await data_cog.flush_voice_counters()
+            except Exception:
+                pass
+    
+    @flush_loop.before_loop
+    async def before_flush_loop(self):
+        await self.bot.wait_until_ready()
+    
+    @tasks.loop(seconds=30)
+    async def boss_dp_loop(self):
+        """Boss tick loop using DP calculation."""
+        await self.bot.wait_until_ready()
+        now = now_ts()
+        
+        for guild in self.bot.guilds:
+            gid = guild.id
+            active_event_ids = await self.get_active_event_ids(gid)
+            if not active_event_ids:
+                continue
+            
+            for event_id in active_event_ids:
+                await self._boss_tick_for_event(guild, gid, event_id, now)
+    
+    @boss_dp_loop.before_loop
+    async def before_boss_dp_loop(self):
+        await self.bot.wait_until_ready()
+    
+    async def _boss_tick_for_event(self, guild: discord.Guild, gid: int, event_id: str, now: int):
+        """Process boss tick for DP system."""
+        boss = await self.bot.db.fetchone(
+            "SELECT boss_name, hp_current, hp_max, last_tick_ts, last_announce_hp_bucket FROM event_boss WHERE guild_id=? AND event_id=?",
+            (gid, event_id)
+        )
+        if not boss:
+            return
+        
+        last_tick = int(boss["last_tick_ts"] or 0)
+        rows = await self.bot.db.fetchall(
+            "SELECT user_id, day_ymd, msg_count, vc_minutes, vc_reduced_minutes, ritual_done, tokens_spent, casino_wager, casino_net, dp_cached FROM event_user_day WHERE guild_id=? AND event_id=? AND last_update_ts > ?",
+            (gid, event_id, last_tick)
+        )
+        
+        if not rows:
+            await self.bot.db.execute("UPDATE event_boss SET last_tick_ts=? WHERE guild_id=? AND event_id=?", (now, gid, event_id))
+            return
+        
+        total_delta = 0.0
+        for r in rows:
+            new_dp = compute_dp(
+                int(r["msg_count"] or 0),
+                int(r["vc_minutes"] or 0),
+                int(r["vc_reduced_minutes"] or 0),
+                int(r["ritual_done"] or 0),
+                int(r["tokens_spent"] or 0),
+                int(r["casino_wager"] or 0),
+                int(r["casino_net"] or 0),
+            )
+            old_dp = float(r["dp_cached"] or 0.0)
+            delta = new_dp - old_dp
+            if delta > 0:
+                total_delta += delta
+            
+            await self.bot.db.execute(
+                "UPDATE event_user_day SET dp_cached=? WHERE guild_id=? AND event_id=? AND user_id=? AND day_ymd=?",
+                (new_dp, gid, event_id, int(r["user_id"]), str(r["day_ymd"]))
+            )
+        
+        hp_cur = int(boss["hp_current"])
+        hp_new = max(0, hp_cur - int(total_delta))
+        
+        await self.bot.db.execute(
+            "UPDATE event_boss SET hp_current=?, last_tick_ts=? WHERE guild_id=? AND event_id=?",
+            (hp_new, now, gid, event_id)
+        )
+        
+        await self._maybe_milestone_post(guild, gid, event_id, boss["boss_name"], int(boss["hp_max"]), hp_new, int(boss["last_announce_hp_bucket"]))
+    
+    async def _maybe_milestone_post(self, guild: discord.Guild, gid: int, event_id: str, boss_name: str, hp_max: int, hp_cur: int, last_bucket: int):
+        """Announce milestone when crossing HP thresholds."""
+        if hp_max <= 0:
+            return
+        hp_percent = int((hp_cur / hp_max) * 100)
+        
+        buckets = [80, 60, 40, 20, 0]
+        hit_bucket = None
+        for b in buckets:
+            if hp_percent <= b:
+                hit_bucket = b
+        if hit_bucket is None:
+            return
+        
+        if hit_bucket >= last_bucket:
+            return
+        
+        await self.bot.db.execute(
+            "UPDATE event_boss SET last_announce_hp_bucket=? WHERE guild_id=? AND event_id=?",
+            (hit_bucket, gid, event_id)
+        )
+        
+        orders = guild.get_channel(self.orders_channel_id) if self.orders_channel_id else None
+        if not isinstance(orders, discord.TextChannel):
+            return
+        
+        desc = f"Good.\n\n{boss_name} is at **{hit_bucket}%**.\nKeep going.\n᲼᲼"
+        await orders.send(embed=self._embed(desc, "Milestone", thumb_url=self.icon))
+    
+    # =========================================================
+    #  F) /calendar GROUP COMMANDS (from custom_events_group.py)
+    # =========================================================
+    
+    def _is_mod(self, m: discord.Member) -> bool:
+        """Check if member is a mod."""
+        p = m.guild_permissions
+        return p.manage_guild or p.manage_events or p.administrator
+    
+    async def _cmd_calendar_create(self, interaction: discord.Interaction):
+        """/calendar create - Interactive event wizard."""
+        if not interaction.guild_id or not interaction.guild:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        if not isinstance(interaction.user, discord.Member) or not self._is_mod(interaction.user):
+            return await interaction.response.send_message(embed=self._embed("Not for you.\n᲼᲼", "Event", thumb_url=self.icon), ephemeral=True)
+        
+        await interaction.response.send_modal(EventCreateModal(self.bot, interaction.channel_id))
+    
+    async def _cmd_calendar_list(self, interaction: discord.Interaction):
+        """/calendar list - Upcoming events."""
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        rows = await self.bot.db.fetchall(
+            "SELECT event_id,title,start_ts,entry_cost FROM events_custom WHERE guild_id=? AND active=1 AND start_ts >= ? ORDER BY start_ts ASC LIMIT 10",
+            (gid, now_ts())
+        )
+        if not rows:
+            return await interaction.followup.send(embed=self._embed("No upcoming events.\n᲼᲼", "Events", thumb_url=self.icon), ephemeral=True)
+        
+        lines = []
+        for r in rows:
+            lines.append(f"**#{r['event_id']}** {r['title']} — <t:{int(r['start_ts'])}:R> — {fmt(int(r['entry_cost']))} Coins")
+        
+        e = self._embed("Upcoming.\n᲼᲼", "Events", thumb_url=self.icon)
+        e.add_field(name="List", value="\n".join(lines), inline=False)
+        e.set_footer(text="Join with /calendar join <event_id>")
+        await interaction.followup.send(embed=e, ephemeral=True)
+    
+    async def _cmd_calendar_join(self, interaction: discord.Interaction, event_id: int):
+        """/calendar join - Join event and get role."""
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        if not gid or not interaction.guild:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        ev = await self.bot.db.fetchone(
+            "SELECT title,start_ts,channel_id,role_id,entry_cost,active FROM events_custom WHERE guild_id=? AND event_id=?",
+            (gid, int(event_id))
+        )
+        if not ev or int(ev["active"]) != 1:
+            return await interaction.followup.send(embed=self._embed("No such event.\n᲼᲼", "Event", thumb_url=self.icon), ephemeral=True)
+        
+        existing = await self.bot.db.fetchone(
+            "SELECT 1 FROM events_custom_participants WHERE guild_id=? AND event_id=? AND user_id=?",
+            (gid, int(event_id), interaction.user.id)
+        )
+        if existing:
+            return await interaction.followup.send(embed=self._embed("You're already in.\n᲼᲼", "Event", thumb_url=self.icon), ephemeral=True)
+        
+        entry = int(ev["entry_cost"] or 0)
+        if entry > 0:
+            await ensure_wallet(self.bot.db, gid, interaction.user.id)
+            w = await get_wallet(self.bot.db, gid, interaction.user.id)
+            if w.coins < entry:
+                return await interaction.followup.send(embed=self._embed("You can't cover the entry cost.\n᲼᲼", "Event", thumb_url=self.icon), ephemeral=True)
+            await add_coins(self.bot.db, gid, interaction.user.id, -entry, kind="event_entry", reason=f"event #{event_id}")
+        
+        await self.bot.db.execute(
+            "INSERT INTO events_custom_participants(guild_id,event_id,user_id,joined_ts) VALUES(?,?,?,?)",
+            (gid, int(event_id), interaction.user.id, now_ts())
+        )
+        
+        role_id = int(ev["role_id"] or 0)
+        if role_id:
+            role = interaction.guild.get_role(role_id)
+            if role:
+                try:
+                    await interaction.user.add_roles(role, reason="event join")
+                except Exception:
+                    pass
+        
+        e = self._embed(
+            f"Joined.\n\nEvent **#{event_id}** — {ev['title']}\nStarts: <t:{int(ev['start_ts'])}:R>\n᲼᲼",
+            "Event",
+            thumb_url=self.icon
+        )
+        await interaction.followup.send(embed=e, ephemeral=True)
+    
+    async def _cmd_calendar_leave(self, interaction: discord.Interaction, event_id: int):
+        """/calendar leave - Leave an event."""
+        await interaction.response.defer(ephemeral=True)
+        gid = interaction.guild_id
+        if not gid or not interaction.guild:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.followup.send(embed=embed, ephemeral=True)
+        
+        ev = await self.bot.db.fetchone(
+            "SELECT role_id,active FROM events_custom WHERE guild_id=? AND event_id=?",
+            (gid, int(event_id))
+        )
+        if not ev or int(ev["active"]) != 1:
+            return await interaction.followup.send(embed=self._embed("No such event.\n᲼᲼", "Event", thumb_url=self.icon), ephemeral=True)
+        
+        await self.bot.db.execute(
+            "DELETE FROM events_custom_participants WHERE guild_id=? AND event_id=? AND user_id=?",
+            (gid, int(event_id), interaction.user.id)
+        )
+        
+        role_id = int(ev["role_id"] or 0)
+        if role_id:
+            role = interaction.guild.get_role(role_id)
+            if role:
+                try:
+                    await interaction.user.remove_roles(role, reason="event leave")
+                except Exception:
+                    pass
+        
+        e = self._embed("Removed.\n᲼᲼", "Event", thumb_url=self.icon)
+        await interaction.followup.send(embed=e, ephemeral=True)
+
+
+# EventCreateModal for /calendar create
+class EventCreateModal(discord.ui.Modal, title="Create Event"):
+    title_in = discord.ui.TextInput(label="Title", max_length=80)
+    start_in = discord.ui.TextInput(label="Start (UK): 'in 2h' or 'YYYY-MM-DD HH:MM'", max_length=32)
+    desc_in = discord.ui.TextInput(label="Description", style=discord.TextStyle.long, required=False, max_length=1000)
+    entry_in = discord.ui.TextInput(label="Entry Cost (Coins)", default="0", max_length=10)
+    role_in = discord.ui.TextInput(label="Role ID (optional)", required=False, max_length=24)
+    
+    def __init__(self, bot: commands.Bot, channel_id: int):
+        super().__init__()
+        self.bot = bot
+        self.channel_id = channel_id
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        gid = interaction.guild_id
+        if not gid:
+            embed = create_embed("Server only.", color="warning", is_dm=False, is_system=False)
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+        
+        start_ts = parse_when_to_ts(str(self.start_in.value))
+        if start_ts <= now_ts():
+            return await interaction.response.send_message(embed=isla_embed_util("Bad start time.\n᲼᲼", title="Event Create"), ephemeral=True)
+        
+        try:
+            entry_cost = max(0, int(str(self.entry_in.value).strip()))
+        except Exception:
+            entry_cost = 0
+        
+        role_id = 0
+        if str(self.role_in.value).strip():
+            try:
+                role_id = int(str(self.role_in.value).strip())
+            except Exception:
+                role_id = 0
+        
+        await self.bot.db.execute(
+            "INSERT INTO events_custom(guild_id,title,description,start_ts,end_ts,channel_id,role_id,entry_cost,reward_coins,max_slots,created_by,created_ts,active) VALUES(?,?,?,?,0,?,?,?,?,0,?,?,1)",
+            (gid, str(self.title_in.value), str(self.desc_in.value or ""), int(start_ts), int(self.channel_id), int(role_id), int(entry_cost), 0, int(interaction.user.id), now_ts())
+        )
+        
+        row = await self.bot.db.fetchone("SELECT MAX(event_id) AS eid FROM events_custom WHERE guild_id=?", (gid,))
+        eid = int(row["eid"] or 0)
+        
+        e = isla_embed_util(
+            f"Event created.\n\n**#{eid}** — {self.title_in.value}\nStarts: {human_eta(start_ts)}\nEntry: **{fmt(entry_cost)} Coins**\n᲼᲼",
+            title="Event"
+        )
+        await interaction.response.send_message(embed=e, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
-    await bot.add_cog(EventSystem(bot))
+    cog = EventSystem(bot)
+    await bot.add_cog(cog)
+    
+    # Register command groups with conflict handling
+    bot.tree.remove_command("event", guild=None)
+    bot.tree.remove_command("calendar", guild=None)
+    try:
+        bot.tree.add_command(cog.event, override=True)
+        bot.tree.add_command(cog.calendar, override=True)
+    except Exception:
+        pass

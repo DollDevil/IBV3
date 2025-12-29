@@ -1,5 +1,6 @@
 from __future__ import annotations
 import discord
+from typing import Optional
 from utils.consent import Consent, pick
 
 def neutral_thumbnail() -> str:
@@ -25,4 +26,25 @@ def thumb_for(consent: Consent, normal_thumb: str | None = None) -> str | None:
     if consent.safeword_on:
         return neutral_thumbnail()
     return normal_thumb
+
+async def get_memory_enhanced_response(
+    bot,
+    pool_key: str,
+    stage: int,
+    guild_id: Optional[int] = None,
+    user_id: Optional[int] = None
+) -> str:
+    """Get a personality response enhanced with memory context."""
+    if hasattr(bot, 'personality') and hasattr(bot, 'memory'):
+        return await bot.personality.get_response_with_memory(
+            pool_key, stage, guild_id, user_id
+        )
+    # Fallback to basic personality
+    stage_key = f"stage_{min(stage, 4)}"
+    pool = bot.personality.pools.get(pool_key, {})
+    responses = pool.get(stage_key, pool.get("stage_0", []))
+    if responses:
+        import random
+        return random.choice(responses)
+    return ""
 

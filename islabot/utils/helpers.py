@@ -4,7 +4,7 @@ Centralized helper functions used across multiple cogs.
 from __future__ import annotations
 import time
 import discord
-from core.isla_text import sanitize_isla_text
+from core.personality import sanitize_isla_text
 
 # Constants
 STYLE1_DEFAULT = "https://i.imgur.com/5nsuuCV.png"

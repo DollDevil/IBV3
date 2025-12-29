@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import ast
+import json
 import os
+import re
 import sys
 import time
+import traceback
+from itertools import islice
 import discord
 from discord.ext import commands
 
@@ -13,508 +18,44 @@ if BOT_DIR not in sys.path:
     sys.path.insert(0, BOT_DIR)
 
 # Use full module path for cogs when running as module (Railway)
-# Check if we're being run as a module (python -m islabot.bot)
 COG_PREFIX = "islabot." if __package__ else ""
 
-from core.config import Config
+from core.configurations import Config, ChannelConfigService, FlagService
 from core.db import Database
-from core.flags import FlagService
-from core.channel_cfg import ChannelConfigService
-from core.personality import Personality
-from core.tone import DEFAULT_POOLS
+from core.personality import Personality, MemoryService, DEFAULT_POOLS
 from discord import app_commands
 
 COGS = [
-    f"{COG_PREFIX}cogs.alive",
-    f"{COG_PREFIX}cogs.moderation",
-    f"{COG_PREFIX}cogs.onboarding",
-    f"{COG_PREFIX}cogs.economy",
-    f"{COG_PREFIX}cogs.progression",
-    f"{COG_PREFIX}cogs.shop",
-    f"{COG_PREFIX}cogs.profile",
-    f"{COG_PREFIX}cogs.voice_stats",
-    f"{COG_PREFIX}cogs.casino_core",
-    f"{COG_PREFIX}cogs.casino_games",
-    f"{COG_PREFIX}cogs.casino_bigwin_dm",
-    f"{COG_PREFIX}cogs.casino_royalty",
-    f"{COG_PREFIX}cogs.casino_daily_recap",
-    f"{COG_PREFIX}cogs.orders",
-    f"{COG_PREFIX}cogs.events",
-    # Event system (load in order: voice -> message -> scheduler -> commands)
-    f"{COG_PREFIX}cogs.voice_tracker",
-    f"{COG_PREFIX}cogs.message_tracker",
-    f"{COG_PREFIX}cogs.event_scheduler",
-    f"{COG_PREFIX}cogs.event_group",  # /event group with subcommands
-    f"{COG_PREFIX}cogs.daily_presence",
-    f"{COG_PREFIX}cogs.vacation_watch",
-    f"{COG_PREFIX}cogs.safeword",
-    f"{COG_PREFIX}cogs.info_unified",
-    f"{COG_PREFIX}cogs.quarterly_tax",
-    f"{COG_PREFIX}cogs.privacy",
-    f"{COG_PREFIX}cogs.admin_tools",
-    f"{COG_PREFIX}cogs.core_commands",
-    f"{COG_PREFIX}cogs.coins_group",
-    f"{COG_PREFIX}cogs.orders_group",
-    f"{COG_PREFIX}cogs.discipline_group",
-    f"{COG_PREFIX}cogs.duel_cog",
-    f"{COG_PREFIX}cogs.custom_events_group",
-    f"{COG_PREFIX}cogs.announce_and_remind",
-    f"{COG_PREFIX}cogs.config_group",
-    f"{COG_PREFIX}cogs.context_apps",
+    # New consolidated structure
+    f"{COG_PREFIX}cogs.commands",          # Commands: alive, core_commands, info_unified, context_apps
+    f"{COG_PREFIX}cogs.onboarding",      # Onboarding: onboarding (includes consent functionality)
+    f"{COG_PREFIX}cogs.user",            # User: privacy, profile, safeword, vacation_watch, auto_reply, duel_cog
+    f"{COG_PREFIX}cogs.economy",         # Economy: economy, shop, quarterly_tax, coins_group
+    f"{COG_PREFIX}cogs.admin",           # Admin: admin_tools, config_group, discipline_group
+    f"{COG_PREFIX}cogs.data",            # Data: moderation, progression, voice_tracker, message_tracker, event_activity_tracker, voice_stats
+    f"{COG_PREFIX}cogs.announcements",   # Announcements: daily_presence, announce_and_remind, leaderboard, casino_daily_recap
+    f"{COG_PREFIX}cogs.orders",          # Orders: orders, orders_group, tributes
+    f"{COG_PREFIX}cogs.events",          # Events: events, event_group, event_scheduler, event_boss_cmd, custom_events_group
+    f"{COG_PREFIX}cogs.casino_core",     # Gambling: casino_core, casino_games, casino_bigwin_dm, casino_royalty (consolidated)
 ]
 
-class IslaBot(commands.Bot):
-    def __init__(self, cfg: Config, db: Database):
-        intents = discord.Intents.default()
-        intents.message_content = True
-        intents.members = True
+# Constants
+SEPARATOR = "=" * 60
+SYNC_ERROR_MESSAGES = {
+    "missing_permission": "Bot missing 'Use Application Commands' permission",
+    "role_position": "Bot role position too low",
+    "missing_scope": "Missing 'applications.commands' scope in invite URL",
+}
 
-        super().__init__(
-            command_prefix=commands.when_mentioned_or("!"),
-            intents=intents,
-        )
-        self.cfg = cfg
-        self.db = db
-        self.flags = FlagService(db)
-        self.chan_cfg = ChannelConfigService(db)
-        self.started_ts = int(time.time())
-        
-        # Hot-reload personality responses
-        personality_path = os.path.join(BOT_DIR, "personality.json")
-        self.personality = Personality(path=personality_path, fallback=DEFAULT_POOLS)
-        self.personality.load()
-        self.personality.sanitize()
-        
-        # Track if commands have been synced
-        self._commands_synced = False
+# Cog names for data collection listener verification
+COG_LISTENER_NAMES = {
+    "Data": "message tracking, voice tracking, event activity tracking",
+    "Announcements": "spotlight tracking, daily presence, announcements",
+    "Events": "event scheduling, boss tick, quest refresh, flush loops",
+}
 
-    async def on_ready(self):
-        """Called when the bot is ready. Register and sync commands."""
-        print(f"\n{'='*60}")
-        print(f"Bot is ready! Logged in as {self.user} (ID: {self.user.id})")
-        print(f"Connected to {len(self.guilds)} guild(s)")
-        print(f"{'='*60}\n")
-        
-        if not self._commands_synced:
-            print("Registering and syncing commands...")
-            # In discord.py 2.0+, @app_commands.command() in cogs ARE automatically added to the tree
-            # But we'll verify and manually register any that might be missing
-            await self._register_cog_commands()
-            await self._sync_commands()
-    
-    async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        """Global error handler for app commands."""
-        if isinstance(error, app_commands.CommandOnCooldown):
-            await interaction.response.send_message(
-                f"This command is on cooldown. Try again in {error.retry_after:.1f} seconds.",
-                ephemeral=True
-            )
-        elif isinstance(error, app_commands.MissingPermissions):
-            await interaction.response.send_message(
-                "You don't have permission to use this command.",
-                ephemeral=True
-            )
-        elif isinstance(error, app_commands.BotMissingPermissions):
-            await interaction.response.send_message(
-                "I don't have the required permissions to execute this command.",
-                ephemeral=True
-            )
-        else:
-            # Log unexpected errors
-            print(f"Unhandled command error: {error}")
-            import traceback
-            traceback.print_exc()
-            try:
-                if interaction.response.is_done():
-                    await interaction.followup.send(
-                        "An error occurred while executing this command.",
-                        ephemeral=True
-                    )
-                else:
-                    await interaction.response.send_message(
-                        "An error occurred while executing this command.",
-                        ephemeral=True
-                    )
-            except Exception:
-                pass  # Ignore errors in error handler
-    
-    async def on_error(self, event_method: str, *args, **kwargs):
-        """Global error handler for events."""
-        print(f"Error in event {event_method}:")
-        import traceback
-        traceback.print_exc()
-    
-    async def _sync_commands(self):
-        """Helper method to sync commands."""
-        # List all commands in the tree before syncing
-        all_commands = []
-        for cmd in self.tree.walk_commands():
-            all_commands.append(cmd.qualified_name)
-        print(f"\n{'='*60}")
-        print(f"Commands in tree before sync: {len(all_commands)}")
-        if all_commands:
-            print(f"  Commands: {', '.join(all_commands[:20])}")
-            if len(all_commands) > 20:
-                print(f"  ... and {len(all_commands) - 20} more")
-        else:
-            print("  WARNING: No commands found in tree! This is likely the problem.")
-        print(f"{'='*60}\n")
-        
-        guild_ids_raw = self.cfg.get("guilds", default=[])
-        
-        # Handle different formats: list, string with commas, or single value
-        guild_ids = []
-        if isinstance(guild_ids_raw, list):
-            # Normalize list items (handle mixed types and nested lists)
-            for item in guild_ids_raw:
-                item_str = str(item).strip()
-                # Check if list item itself is a comma-separated string
-                if ',' in item_str:
-                    # Split and add each ID
-                    guild_ids.extend([gid.strip() for gid in item_str.split(",") if gid.strip()])
-                elif isinstance(item, (list, tuple)):
-                    # Handle nested lists
-                    guild_ids.extend([str(subitem).strip() for subitem in item if subitem])
-                else:
-                    guild_ids.append(item_str)
-        elif isinstance(guild_ids_raw, str):
-            # Handle comma-separated string (common issue from environment variables)
-            # Also handle if it's a string representation of a list
-            if guild_ids_raw.strip().startswith('[') and guild_ids_raw.strip().endswith(']'):
-                # Try to parse as JSON-like list
-                import ast
-                try:
-                    parsed = ast.literal_eval(guild_ids_raw)
-                    if isinstance(parsed, list):
-                        guild_ids = [str(item).strip() for item in parsed if item]
-                    else:
-                        guild_ids = [str(parsed).strip()]
-                except:
-                    # Fall back to comma splitting
-                    guild_ids = [gid.strip() for gid in guild_ids_raw.split(",") if gid.strip()]
-            else:
-                # Simple comma-separated string
-                guild_ids = [gid.strip() for gid in guild_ids_raw.split(",") if gid.strip()]
-        elif guild_ids_raw:
-            # Single value (not a list) - convert to list
-            # Check if it's a comma-separated string
-            item_str = str(guild_ids_raw).strip()
-            if ',' in item_str:
-                guild_ids = [gid.strip() for gid in item_str.split(",") if gid.strip()]
-            else:
-                guild_ids = [item_str]
-        
-        # Debug output
-        if guild_ids:
-            print(f"Parsed {len(guild_ids)} guild ID(s) from config")
-        
-        if guild_ids:
-            # Verify bot can see the guilds before syncing
-            bot_guild_ids = {g.id for g in self.guilds}
-            print(f"Bot is in {len(bot_guild_ids)} guild(s): {', '.join(str(gid) for gid in list(bot_guild_ids)[:5])}")
-            if len(bot_guild_ids) > 5:
-                print(f"  ... and {len(bot_guild_ids) - 5} more")
-            
-            # Sync commands directly to each guild (guild-specific commands)
-            # This prevents duplicates that occur when syncing both globally and per-guild
-            # IMPORTANT: We do NOT sync globally - only to specific guilds
-            # If you see duplicate commands, it's from a previous global sync that will expire
-            print(f"\nSyncing commands to guilds (guild-specific only, no global sync)...")
-            for gid in guild_ids:
-                try:
-                    guild_id_int = int(str(gid).strip())
-                    
-                    # Verify bot is actually in this guild
-                    if guild_id_int not in bot_guild_ids:
-                        print(f"⚠ Warning: Bot is not in guild {guild_id_int}")
-                        print(f"  The bot must be invited to the server before commands can sync.")
-                        print(f"  Check that the bot is actually in the server.")
-                        continue
-                    
-                    g = discord.Object(id=guild_id_int)
-                    print(f"Syncing commands to guild {guild_id_int}...")
-                    synced = await self.tree.sync(guild=g)
-                    
-                    total_cmds = len(list(self.tree.walk_commands()))
-                    if len(synced) == 0 and total_cmds > 0:
-                        print(f"⚠ Warning: 0 commands synced to guild {guild_id_int} (but {total_cmds} in tree)")
-                        print(f"  Possible causes:")
-                        print(f"  - Bot missing 'Use Application Commands' permission")
-                        print(f"  - Bot role position too low")
-                        print(f"  - Missing 'applications.commands' scope in invite URL")
-                    else:
-                        print(f"✓ Successfully synced {len(synced)} commands to guild {guild_id_int}")
-                        if synced:
-                            for cmd in synced[:10]:
-                                print(f"  - {cmd.name}")
-                            if len(synced) > 10:
-                                print(f"  ... and {len(synced) - 10} more")
-                except ValueError as e:
-                    print(f"✗ Error: Invalid guild ID format '{gid}': {e}")
-                    print(f"  Guild IDs must be numeric. Check your config.yml")
-                except discord.HTTPException as e:
-                    if e.status == 403:
-                        print(f"✗ Error: Forbidden (403) when syncing to guild {guild_id_int}")
-                        print(f"  Possible causes:")
-                        print(f"  - Bot missing 'Use Application Commands' permission in server")
-                        print(f"  - Bot role position too low")
-                        print(f"  - Missing 'applications.commands' scope in invite URL")
-                    elif e.status == 429:
-                        print(f"⚠ Rate limited. Waiting before retry...")
-                        await asyncio.sleep(5)
-                        # Retry once
-                        try:
-                            synced = await self.tree.sync(guild=g)
-                            print(f"✓ Retry successful: synced {len(synced)} commands")
-                        except Exception as retry_error:
-                            print(f"✗ Retry failed: {retry_error}")
-                    else:
-                        print(f"✗ HTTP Error {e.status}: {e}")
-                        raise
-                except Exception as e:
-                    print(f"✗ Error: Failed to sync commands for guild {gid}: {e}")
-                    import traceback
-                    traceback.print_exc()
-        else:
-            # No guild IDs specified - sync globally
-            print("No specific guild IDs found in config. Syncing globally...")
-            try:
-                synced = await self.tree.sync()
-                print(f"✓ Synced {len(synced)} global commands")
-                if synced:
-                    for cmd in synced[:10]:
-                        print(f"  - {cmd.name}")
-                    if len(synced) > 10:
-                        print(f"  ... and {len(synced) - 10} more")
-            except Exception as e:
-                print(f"✗ Global sync failed: {e}")
-                import traceback
-                traceback.print_exc()
-        
-        self._commands_synced = True
-        
-        print(f"\n{'='*60}")
-        print("SYNC VERIFICATION:")
-        print(f"{'='*60}")
-        
-        # Verify bot connection
-        if self.user:
-            print(f"✓ Bot is logged in as: {self.user.name}#{self.user.discriminator}")
-            print(f"✓ Bot ID: {self.user.id}")
-        else:
-            print("✗ Bot user not found - connection issue!")
-        
-        # Verify guilds
-        if self.guilds:
-            print(f"✓ Bot is in {len(self.guilds)} guild(s)")
-            for guild in list(self.guilds)[:3]:
-                print(f"  - {guild.name} (ID: {guild.id})")
-            if len(self.guilds) > 3:
-                print(f"  ... and {len(self.guilds) - 3} more")
-        else:
-            print("✗ Bot is not in any guilds!")
-            print("  Invite the bot to your server first.")
-        
-        # Check commands
-        total_commands = len(list(self.tree.walk_commands()))
-        print(f"✓ Total commands registered: {total_commands}")
-        
-        if total_commands == 0:
-            print("  ⚠ WARNING: No commands found! This is a code issue.")
-        elif guild_ids and total_commands > 0:
-            print(f"\n{'='*60}")
-            print("IF COMMANDS DON'T APPEAR IN DISCORD:")
-            print(f"{'='*60}")
-            print("1. CHECK INVITE URL - Must include 'applications.commands' scope")
-            print("   Correct format: https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_ID&permissions=8&scope=bot%20applications.commands")
-            print("2. RE-INVITE the bot with the correct URL (even if already in server)")
-            print("3. WAIT 1-2 minutes for Discord to propagate commands")
-            print("4. RESTART Discord client (Ctrl+R or Cmd+R)")
-            print("5. CHECK Railway logs above for sync errors")
-            print(f"{'='*60}\n")
-        
-        self._commands_synced = True
-
-    async def setup_hook(self):
-        """Called when the bot is setting up. Initialize database and load cogs."""
-        print(f"\n{'='*60}")
-        print("Initializing IslaBot...")
-        print(f"{'='*60}\n")
-        
-        # Initialize database
-        try:
-            await self.db.connect()
-            print("✓ Database connected")
-            await self.db.migrate()
-            print("✓ Database migrations completed")
-        except Exception as e:
-            print(f"✗ Database error during setup: {e}")
-            import traceback
-            traceback.print_exc()
-            raise
-
-        # Load all cogs
-        loaded_count = 0
-        failed_count = 0
-        for ext in COGS:
-            try:
-                await self.load_extension(ext)
-                loaded_count += 1
-                print(f"✓ Loaded: {ext}")
-            except Exception as e:
-                # Check if it's a CommandAlreadyRegistered error - this is recoverable
-                error_str = str(e)
-                if "CommandAlreadyRegistered" in error_str:
-                    # Try to extract command name and remove it, then retry
-                    import re
-                    match = re.search(r"Command '(\w+)' already registered", error_str)
-                    if match:
-                        cmd_name = match.group(1)
-                        try:
-                            self.tree.remove_command(cmd_name, guild=None)
-                            # Retry loading the extension
-                            await self.load_extension(ext)
-                            loaded_count += 1
-                            print(f"✓ Loaded: {ext} (after removing duplicate '{cmd_name}' command)")
-                            continue
-                        except Exception as retry_error:
-                            failed_count += 1
-                            print(f"✗ Failed to load {ext} even after removing duplicate command: {retry_error}")
-                    else:
-                        failed_count += 1
-                        print(f"✗ Failed to load {ext}: {e}")
-                else:
-                    failed_count += 1
-                    print(f"✗ Failed to load {ext}: {e}")
-                import traceback
-                traceback.print_exc()
-                # Continue loading other extensions
-        
-        print(f"\n{'='*60}")
-        print(f"Extensions: {loaded_count} loaded, {failed_count} failed")
-        print("Waiting for bot to be ready...")
-        print(f"{'='*60}\n")
-    
-    async def _register_cog_commands(self):
-        """Register all app_commands from loaded cogs to the command tree.
-        
-        Note: In discord.py 2.0+, commands defined with @app_commands.command() 
-        in cogs ARE automatically added to the tree when bot.add_cog() is called.
-        This function verifies and manually registers any that might be missing.
-        """
-        print("Checking command registration...")
-        
-        # First, check what's already in the tree (from auto-registration)
-        existing_commands = {cmd.qualified_name for cmd in self.tree.walk_commands()}
-        print(f"  Commands already in tree (auto-registered): {len(existing_commands)}")
-        
-        registered_count = 0
-        skipped_count = 0
-        found_commands = []
-        
-        # Scan all cogs for app_commands
-        for cog_name, cog in self.cogs.items():
-            # Get all attributes of the cog
-            for attr_name in dir(cog):
-                # Skip private attributes and methods
-                if attr_name.startswith('_'):
-                    continue
-                
-                try:
-                    attr = getattr(cog, attr_name, None)
-                    
-                    # Check if it's an app_commands.Command or app_commands.Group
-                    if isinstance(attr, (app_commands.Command, app_commands.Group)):
-                        found_commands.append(attr.qualified_name)
-                        
-                        # Check if command is already in tree
-                        if attr.qualified_name in existing_commands:
-                            skipped_count += 1
-                            continue
-                            
-                        # Command not in tree, add it manually
-                        try:
-                            self.tree.add_command(attr)
-                            registered_count += 1
-                            print(f"  ✓ Manually registered: {attr.qualified_name}")
-                            existing_commands.add(attr.qualified_name)
-                        except Exception as e:
-                            print(f"  ✗ Failed to register {attr.qualified_name}: {e}")
-                            
-                except Exception:
-                    # Silently skip errors when checking attributes
-                    pass
-        
-        print(f"\nCommand Registration Summary:")
-        print(f"  - Found in cogs: {len(found_commands)}")
-        print(f"  - Already in tree: {skipped_count}")
-        print(f"  - Manually registered: {registered_count}")
-        print(f"  - Total in tree now: {len(existing_commands)}")
-        
-        if len(existing_commands) == 0:
-            print(f"\n{'='*60}")
-            print("⚠ CRITICAL WARNING: NO COMMANDS FOUND IN TREE!")
-            print("This means commands aren't being registered properly.")
-            print("Check:")
-            print("  1. Are cogs loading without errors?")
-            print("  2. Do cogs have @app_commands.command() decorators?")
-            print("  3. Are setup() functions calling bot.add_cog()?")
-            print(f"{'='*60}\n")
-        elif len(found_commands) > len(existing_commands):
-            print(f"\n⚠ Warning: Found {len(found_commands)} commands in cogs but only {len(existing_commands)} in tree")
-            print("Some commands may not be registered properly.\n")
-        
-        # Verify data collection listeners are active
-        listeners_active = []
-        if self.get_cog("Moderation"):
-            listeners_active.append("message tracking")
-        if self.get_cog("VoiceTracker"):
-            listeners_active.append("voice tracking")
-        if self.get_cog("MessageTracker"):
-            listeners_active.append("message hourly tracking")
-        if self.get_cog("Leaderboard"):
-            listeners_active.append("spotlight tracking")
-        if self.get_cog("EventActivityTracker"):
-            listeners_active.append("event activity tracking")
-        
-        if listeners_active:
-            print(f"✓ Data collection active: {', '.join(listeners_active)}")
-        else:
-            print("⚠ Warning: Some data collection listeners may not be active")
-        
-        # Verify database is accessible
-        try:
-            test_result = await self.db.fetchone("SELECT 1 as test")
-            if test_result:
-                print("✓ Database connection verified")
-        except Exception as e:
-            print(f"⚠ Warning: Database health check failed: {e}")
-
-    async def close(self):
-        await super().close()
-        await self.db.close()
-
-async def main():
-    # Use paths relative to bot.py location (Wispbyte compatible)
-    config_path = os.path.join(BOT_DIR, "config.yml")
-    db_path = os.path.join(BOT_DIR, "islabot.sqlite3")
-    
-    # Check if config.yml exists, if not try to create from environment variables
-    if not os.path.exists(config_path):
-        print("=" * 60)
-        print("config.yml not found. Attempting to create from environment variables...")
-        print("=" * 60)
-        
-        # Try to create config.yml from environment variables (Railway compatible)
-        token = os.getenv("DISCORD_BOT_TOKEN")
-        if token:
-            # Create basic config from environment variables
-            # Only token and guilds are required - channels and roles can be configured later via Discord commands
-            guild_id = os.getenv("DISCORD_GUILDS", "")
-            if not guild_id:
-                guild_id = "123456789012345678"  # placeholder, will need to be set
-            
-            config_content = f"""token: "{token}"
+# Config template for environment variable creation
+DEFAULT_CONFIG_TEMPLATE = """token: "{token}"
 
 guilds:
   - {guild_id}
@@ -571,16 +112,503 @@ casino_recap:
   min_unique_players: 25
   time_uk: "21:15"
 """
+
+
+# Helper functions for consistent output formatting
+def _print_section(title: str = ""):
+    """Print a section separator with optional title."""
+    print(f"\n{SEPARATOR}")
+    if title:
+        print(title)
+        print(SEPARATOR)
+
+
+def _print_list(items: list, max_items: int = 10, prefix: str = "  "):
+    """Print a list with truncation."""
+    for item in items[:max_items]:
+        print(f"{prefix}- {item}")
+    if len(items) > max_items:
+        print(f"{prefix}... and {len(items) - max_items} more")
+
+
+class IslaBot(commands.Bot):
+    def __init__(self, cfg: Config, db: Database):
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.members = True
+
+        super().__init__(
+            command_prefix=commands.when_mentioned_or("!"),
+            intents=intents,
+        )
+        self.cfg = cfg
+        self.db = db
+        self.flags = FlagService(db)
+        self.chan_cfg = ChannelConfigService(db)
+        self.started_ts = int(time.time())
+        
+        # Initialize memory service first (needed by personality)
+        self.memory = MemoryService(db)
+        
+        # Hot-reload personality responses (with memory integration)
+        personality_path = os.path.join(BOT_DIR, "personality.json")
+        self.personality = Personality(path=personality_path, fallback=DEFAULT_POOLS, memory_service=self.memory)
+        self.personality.load()
+        self.personality.sanitize()
+        
+        self._commands_synced = False
+        self._guild_ids_cache = None  # Cache parsed guild IDs
+
+    def _parse_guild_ids(self, guild_ids_raw) -> list[str]:
+        """Parse guild IDs from various formats (list, string, etc.). Cached result."""
+        # #region agent log
+        cached = self._guild_ids_cache is not None
+        # #endregion
+        
+        if self._guild_ids_cache is not None:
+            # #region agent log
             try:
-                with open(config_path, "w", encoding="utf-8") as f:
-                    f.write(config_content)
-                print(f"✓ Created config.yml from environment variables at {config_path}")
-            except Exception as e:
-                print(f"✗ Failed to create config.yml: {e}")
-                sys.exit(1)
+                with open(r"c:\Users\Yuu\Documents\IslaBotV3\.cursor\debug.log", "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"sessionId": "perf-cleanup", "runId": "run1", "hypothesisId": "C", "location": "bot.py:_parse_guild_ids", "message": "Guild ID cache hit", "data": {"cached": True}, "timestamp": int(time.time() * 1000)}) + "\n")
+            except Exception:
+                pass
+            # #endregion
+            return self._guild_ids_cache
+        
+        if not guild_ids_raw:
+            self._guild_ids_cache = []
+            return []
+        
+        def _split_comma_separated(s: str) -> list[str]:
+            """Split comma-separated string into list of trimmed IDs."""
+            return [gid.strip() for gid in s.split(",") if gid.strip()]
+        
+        guild_ids = []
+        
+        if isinstance(guild_ids_raw, list):
+            for item in guild_ids_raw:
+                item_str = str(item).strip()
+                if ',' in item_str:
+                    guild_ids.extend(_split_comma_separated(item_str))
+                elif isinstance(item, (list, tuple)):
+                    guild_ids.extend([str(subitem).strip() for subitem in item if subitem])
+                elif item_str:
+                    guild_ids.append(item_str)
         else:
+            # Handle string or other types
+            item_str = str(guild_ids_raw).strip()
+            if item_str.startswith('[') and item_str.endswith(']'):
+                try:
+                    parsed = ast.literal_eval(item_str)
+                    parsed_list = parsed if isinstance(parsed, list) else [parsed]
+                    guild_ids = [str(item).strip() for item in parsed_list if item]
+                except (ValueError, SyntaxError):
+                    guild_ids = _split_comma_separated(item_str)
+            elif ',' in item_str:
+                guild_ids = _split_comma_separated(item_str)
+            elif item_str:
+                guild_ids = [item_str]
+        
+        self._guild_ids_cache = guild_ids
+        
+        # #region agent log
+        try:
+            with open(r"c:\Users\Yuu\Documents\IslaBotV3\.cursor\debug.log", "a", encoding="utf-8") as f:
+                f.write(json.dumps({"sessionId": "perf-cleanup", "runId": "run1", "hypothesisId": "C", "location": "bot.py:_parse_guild_ids", "message": "Guild ID cache miss", "data": {"cached": False, "guild_count": len(guild_ids)}, "timestamp": int(time.time() * 1000)}) + "\n")
+        except Exception:
+            pass
+        # #endregion
+        
+        return guild_ids
+
+    def _force_remove_command(self, cmd_name: str) -> bool:
+        """Forcefully remove a command from the tree using multiple strategies."""
+        removed = False
+        
+        # Strategy 1: Remove global command
+        try:
+            if self.tree.remove_command(cmd_name, guild=None) is not None:
+                removed = True
+        except Exception:
+            pass
+        
+        # Strategy 2: Remove from all guild contexts (use cached guild IDs)
+        if self._guild_ids_cache is None:
+            self._parse_guild_ids(self.cfg.get("guilds", default=[]))
+        try:
+            for gid_str in self._guild_ids_cache:
+                try:
+                    guild_obj = discord.Object(id=int(str(gid_str).strip()))
+                    if self.tree.remove_command(cmd_name, guild=guild_obj) is not None:
+                        removed = True
+                except (ValueError, Exception):
+                    pass
+        except Exception:
+            pass
+        
+        # Strategy 3: Verify removal
+        try:
+            result = self.tree.get_command(cmd_name, guild=None) is None
+        except Exception:
+            result = removed
+        
+        # #region agent log
+        try:
+            with open(r"c:\Users\Yuu\Documents\IslaBotV3\.cursor\debug.log", "a", encoding="utf-8") as f:
+                f.write(json.dumps({"sessionId": "perf-cleanup", "runId": "run1", "hypothesisId": "D", "location": "bot.py:_force_remove_command", "message": "Command removal", "data": {"cmd_name": cmd_name, "removed": result, "used_cache": self._guild_ids_cache is not None}, "timestamp": int(time.time() * 1000)}) + "\n")
+        except Exception:
+            pass
+        # #endregion
+        
+        return result
+
+    async def _sync_guild_commands(self, guild_id_int: int, all_commands: list[str]) -> bool:
+        """Sync commands to a specific guild. Returns True if successful."""
+        try:
+            guild_obj = discord.Object(id=guild_id_int)
+            synced = await self.tree.sync(guild=guild_obj)
+            
+            if not synced and all_commands:
+                print(f"⚠ Warning: 0 commands synced to guild {guild_id_int} (but {len(all_commands)} in tree)")
+                print(f"  Possible causes:")
+                for msg_key in ["missing_permission", "role_position", "missing_scope"]:
+                    print(f"  - {SYNC_ERROR_MESSAGES[msg_key]}")
+            else:
+                print(f"✓ Successfully synced {len(synced)} commands to guild {guild_id_int}")
+                if synced:
+                    _print_list([cmd.name for cmd in synced])
+            return True
+        except discord.HTTPException as e:
+            if e.status == 403:
+                print(f"✗ Error: Forbidden (403) when syncing to guild {guild_id_int}")
+                for msg_key in ["missing_permission", "role_position", "missing_scope"]:
+                    print(f"  - {SYNC_ERROR_MESSAGES[msg_key]}")
+            elif e.status == 429:
+                print(f"⚠ Rate limited. Waiting before retry...")
+                await asyncio.sleep(5)
+                try:
+                    synced = await self.tree.sync(guild=guild_obj)
+                    print(f"✓ Retry successful: synced {len(synced)} commands")
+                    return True
+                except Exception as retry_error:
+                    print(f"✗ Retry failed: {retry_error}")
+            else:
+                print(f"✗ HTTP Error {e.status}: {e}")
+                raise
+            return False
+        except ValueError as e:
+            print(f"✗ Error: Invalid guild ID format: {e}")
+            print(f"  Guild IDs must be numeric. Check your config.yml")
+            return False
+        except Exception as e:
+            print(f"✗ Error: Failed to sync commands for guild {guild_id_int}: {e}")
+            traceback.print_exc()
+            return False
+
+    async def _sync_commands(self, all_commands: list[str] | None = None):
+        """Sync commands to Discord. Accepts pre-computed command list to avoid duplicate tree walks."""
+        # #region agent log
+        sync_start = time.perf_counter()
+        walked_commands = all_commands is None
+        # #endregion
+        
+        if all_commands is None:
+            all_commands = [cmd.qualified_name for cmd in self.tree.walk_commands()]
+        
+        # #region agent log
+        try:
+            with open(r"c:\Users\Yuu\Documents\IslaBotV3\.cursor\debug.log", "a", encoding="utf-8") as f:
+                f.write(json.dumps({"sessionId": "perf-cleanup", "runId": "run1", "hypothesisId": "B", "location": "bot.py:_sync_commands", "message": "Command tree walk", "data": {"walked_commands": walked_commands, "command_count": len(all_commands)}, "timestamp": int(time.time() * 1000)}) + "\n")
+        except Exception:
+            pass
+        # #endregion
+        
+        _print_section(f"Commands in tree before sync: {len(all_commands)}")
+        
+        if all_commands:
+            _print_list(all_commands[:20], max_items=20)
+        else:
+            print("  WARNING: No commands found in tree! This is likely the problem.")
+        print()
+        
+        guild_ids = self._parse_guild_ids(self.cfg.get("guilds", default=[]))
+        
+        if guild_ids:
+            print(f"Parsed {len(guild_ids)} guild ID(s) from config")
+            bot_guild_ids = {g.id for g in self.guilds}
+            guild_list = list(bot_guild_ids)[:5]
+            print(f"Bot is in {len(bot_guild_ids)} guild(s): {', '.join(str(gid) for gid in guild_list)}")
+            if len(bot_guild_ids) > 5:
+                print(f"  ... and {len(bot_guild_ids) - 5} more")
+            
+            print(f"\nSyncing commands to guilds (guild-specific only, no global sync)...")
+            for gid in guild_ids:
+                try:
+                    guild_id_int = int(str(gid).strip())
+                    if guild_id_int not in bot_guild_ids:
+                        print(f"⚠ Warning: Bot is not in guild {guild_id_int}")
+                        print(f"  The bot must be invited to the server before commands can sync.")
+                        continue
+                    await self._sync_guild_commands(guild_id_int, all_commands)
+                except ValueError:
+                    print(f"✗ Error: Invalid guild ID format '{gid}'")
+        else:
+            # No guild IDs specified - sync globally
+            print("No specific guild IDs found in config. Syncing globally...")
+            try:
+                synced = await self.tree.sync()
+                print(f"✓ Synced {len(synced)} global commands")
+                if synced:
+                    _print_list([cmd.name for cmd in synced])
+            except Exception as e:
+                print(f"✗ Global sync failed: {e}")
+                traceback.print_exc()
+        
+        # Verification section
+        _print_section("SYNC VERIFICATION")
+        
+        if self.user:
+            print(f"✓ Bot is logged in as: {self.user.name}#{self.user.discriminator}")
+            print(f"✓ Bot ID: {self.user.id}")
+        else:
+            print("✗ Bot user not found - connection issue!")
+        
+        if self.guilds:
+            print(f"✓ Bot is in {len(self.guilds)} guild(s)")
+            # Use islice for efficient slicing without full list conversion
+            _print_list([f"{g.name} (ID: {g.id})" for g in islice(self.guilds, 3)], max_items=3)
+        else:
+            print("✗ Bot is not in any guilds!")
+            print("  Invite the bot to your server first.")
+        
+        print(f"✓ Total commands registered: {len(all_commands)}")
+        
+        if not all_commands:
+            print("  ⚠ WARNING: No commands found! This is a code issue.")
+        elif guild_ids:
+            _print_section("IF COMMANDS DON'T APPEAR IN DISCORD:")
+            print("1. CHECK INVITE URL - Must include 'applications.commands' scope")
+            print("   Correct format: https://discord.com/api/oauth2/authorize?client_id=YOUR_BOT_ID&permissions=8&scope=bot%20applications.commands")
+            print("2. RE-INVITE the bot with the correct URL (even if already in server)")
+            print("3. WAIT 1-2 minutes for Discord to propagate commands")
+            print("4. RESTART Discord client (Ctrl+R or Cmd+R)")
+            print("5. CHECK Railway logs above for sync errors")
+            print()
+        
+        self._commands_synced = True
+
+    async def _handle_command_already_registered(self, ext: str, cmd_name: str) -> bool:
+        """Handle CommandAlreadyRegistered error. Returns True if extension loaded successfully."""
+        try:
+            # Try to unload the extension if it's partially loaded
+            if ext in self.extensions:
+                try:
+                    await self.unload_extension(ext)
+                except Exception:
+                    pass
+            
+            # Remove command - try multiple times
+            for _ in range(3):
+                if self._force_remove_command(cmd_name):
+                    break
+                await asyncio.sleep(0.05)
+            
+            await asyncio.sleep(0.1)
+            await self.load_extension(ext)
+            print(f"✓ Loaded: {ext} (after removing duplicate '{cmd_name}' command)")
+            return True
+        except Exception as retry_error:
+            print(f"✗ Failed to load {ext} even after removing duplicate command: {retry_error}")
+            return False
+
+    async def setup_hook(self):
+        """Called when the bot is setting up. Initialize database and load cogs."""
+        _print_section("Initializing IslaBot...")
+        
+        # Initialize database
+        try:
+            await self.db.connect()
+            print("✓ Database connected")
+            await self.db.migrate()
+            print("✓ Database migrations completed")
+        except Exception as e:
+            print(f"✗ Database error during setup: {e}")
+            traceback.print_exc()
+            raise
+
+        # Load all cogs
+        loaded_count = 0
+        failed_count = 0
+        for ext in COGS:
+            try:
+                # If extension is already loaded, unload it first to avoid conflicts
+                if ext in self.extensions:
+                    try:
+                        await self.unload_extension(ext)
+                    except Exception:
+                        pass
+                
+                await self.load_extension(ext)
+                loaded_count += 1
+                print(f"✓ Loaded: {ext}")
+            except Exception as e:
+                error_str = str(e)
+                if "CommandAlreadyRegistered" in error_str:
+                    match = re.search(r"Command '(\w+)' already registered", error_str)
+                    if match:
+                        if await self._handle_command_already_registered(ext, match.group(1)):
+                            loaded_count += 1
+                            continue
+                failed_count += 1
+                print(f"✗ Failed to load {ext}: {e}")
+                traceback.print_exc()
+        
+        _print_section(f"Extensions: {loaded_count} loaded, {failed_count} failed")
+        print("Waiting for bot to be ready...")
+        print()
+
+    async def _register_cog_commands(self, existing_commands: set[str] | None = None):
+        """Verify command registration and check system health. Accepts pre-computed commands set."""
+        # #region agent log
+        start_time = time.perf_counter()
+        # #endregion
+        
+        if existing_commands is None:
+            existing_commands = {cmd.qualified_name for cmd in self.tree.walk_commands()}
+        
+        print(f"Commands in tree: {len(existing_commands)}")
+        
+        found_commands = []
+        registered_count = 0
+        
+        # #region agent log
+        cog_scan_start = time.perf_counter()
+        cog_count = 0
+        attr_checks = 0
+        # #endregion
+        
+        # Scan cogs for app_commands - use vars() instead of dir() for better performance
+        for cog in self.cogs.values():
+            cog_count += 1
+            # Use __dict__ instead of dir() - much faster, only gets instance attributes
+            cog_dict = vars(cog)
+            for attr_name, attr_value in cog_dict.items():
+                attr_checks += 1
+                if attr_name.startswith('_'):
+                    continue
+                if isinstance(attr_value, (app_commands.Command, app_commands.Group)):
+                    found_commands.append(attr_value.qualified_name)
+                    if attr_value.qualified_name not in existing_commands:
+                        try:
+                            self.tree.add_command(attr_value)
+                            registered_count += 1
+                            print(f"  ✓ Manually registered: {attr_value.qualified_name}")
+                        except Exception as e:
+                            print(f"  ✗ Failed to register {attr_value.qualified_name}: {e}")
+        
+        # #region agent log
+        cog_scan_time = time.perf_counter() - cog_scan_start
+        total_time = time.perf_counter() - start_time
+        try:
+            with open(r"c:\Users\Yuu\Documents\IslaBotV3\.cursor\debug.log", "a", encoding="utf-8") as f:
+                f.write(json.dumps({"sessionId": "perf-cleanup", "runId": "run1", "hypothesisId": "A", "location": "bot.py:_register_cog_commands", "message": "Performance measurement", "data": {"cog_count": cog_count, "attr_checks": attr_checks, "cog_scan_ms": cog_scan_time * 1000, "total_ms": total_time * 1000}, "timestamp": int(time.time() * 1000)}) + "\n")
+        except Exception:
+            pass
+        # #endregion
+        
+        if registered_count > 0:
+            print(f"Manually registered {registered_count} command(s)")
+        
+        if not existing_commands:
+            _print_section("⚠ CRITICAL WARNING: NO COMMANDS FOUND IN TREE!")
+            print("Check: Are cogs loading? Do cogs have @app_commands.command()?")
+            print()
+        
+        # Verify data collection listeners (use module-level constant to avoid recreating dict)
+        listeners_active = [desc for cog_name, desc in COG_LISTENER_NAMES.items() if self.get_cog(cog_name)]
+        
+        if listeners_active:
+            print(f"✓ Data collection active: {', '.join(listeners_active)}")
+        
+        # Verify database
+        try:
+            if await self.db.fetchone("SELECT 1 as test"):
+                print("✓ Database connection verified")
+        except Exception as e:
+            print(f"⚠ Warning: Database health check failed: {e}")
+
+    async def on_ready(self):
+        """Called when the bot is ready. Register and sync commands."""
+        _print_section()
+        print(f"Bot is ready! Logged in as {self.user} (ID: {self.user.id})")
+        print(f"Connected to {len(self.guilds)} guild(s)")
+        print()
+        
+        if not self._commands_synced:
+            print("Registering and syncing commands...")
+            # Cache command list to avoid duplicate tree walks
+            all_commands_list = [cmd.qualified_name for cmd in self.tree.walk_commands()]
+            all_commands_set = set(all_commands_list)
+            await self._register_cog_commands(all_commands_set)
+            await self._sync_commands(all_commands_list)
+    
+    async def on_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
+        """Global error handler for app commands."""
+        error_messages = {
+            app_commands.CommandOnCooldown: lambda e: f"This command is on cooldown. Try again in {e.retry_after:.1f} seconds.",
+            app_commands.MissingPermissions: "You don't have permission to use this command.",
+            app_commands.BotMissingPermissions: "I don't have the required permissions to execute this command.",
+        }
+        
+        message = None
+        for error_type, msg in error_messages.items():
+            if isinstance(error, error_type):
+                message = msg(error) if callable(msg) else msg
+                break
+        
+        if message:
+            try:
+                await interaction.response.send_message(message, ephemeral=True)
+            except Exception:
+                try:
+                    await interaction.followup.send(message, ephemeral=True)
+                except Exception:
+                    pass
+        else:
+            # Log unexpected errors
+            print(f"Unhandled command error: {error}")
+            traceback.print_exc()
+            try:
+                error_msg = "An error occurred while executing this command."
+                if interaction.response.is_done():
+                    await interaction.followup.send(error_msg, ephemeral=True)
+                else:
+                    await interaction.response.send_message(error_msg, ephemeral=True)
+            except Exception:
+                pass
+    
+    async def on_error(self, event_method: str, *args, **kwargs):
+        """Global error handler for events."""
+        print(f"Error in event {event_method}:")
+        traceback.print_exc()
+
+    async def close(self):
+        await super().close()
+        await self.db.close()
+
+
+async def main():
+    config_path = os.path.join(BOT_DIR, "config.yml")
+    db_path = os.path.join(BOT_DIR, "islabot.sqlite3")
+    
+    # Create config from environment variables if it doesn't exist
+    if not os.path.exists(config_path):
+        _print_section("config.yml not found. Attempting to create from environment variables...")
+        
+        token = os.getenv("DISCORD_BOT_TOKEN")
+        if not token:
             print("ERROR: config.yml file not found and DISCORD_BOT_TOKEN not set!")
-            print("=" * 60)
+            print(SEPARATOR)
             print(f"Expected location: {config_path}")
             print("\nTo fix this:")
             print("1. Create config.yml in the islabot/ directory, OR")
@@ -589,21 +617,27 @@ casino_recap:
             print("  token: \"YOUR_BOT_TOKEN_HERE\"")
             print("  guilds:")
             print("    - YOUR_GUILD_ID")
-            print("  channels:")
-            print("    spotlight: CHANNEL_ID")
-            print("    # ... other settings")
-            print("=" * 60)
+            print(SEPARATOR)
+            sys.exit(1)
+        
+        guild_id = os.getenv("DISCORD_GUILDS", "123456789012345678")
+        config_content = DEFAULT_CONFIG_TEMPLATE.format(token=token, guild_id=guild_id)
+        
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                f.write(config_content)
+            print(f"✓ Created config.yml from environment variables at {config_path}")
+        except Exception as e:
+            print(f"✗ Failed to create config.yml: {e}")
             sys.exit(1)
     
     cfg = Config.load(config_path)
     
     # Check if token is set
-    if not cfg.get("token") or cfg.get("token") == "PUT_YOUR_BOT_TOKEN_HERE":
-        print("=" * 60)
-        print("ERROR: Bot token not configured!")
-        print("=" * 60)
+    token = cfg.get("token")
+    if not token or token == "PUT_YOUR_BOT_TOKEN_HERE":
+        _print_section("ERROR: Bot token not configured!")
         print("Please set your bot token in config.yml")
-        print("=" * 60)
         sys.exit(1)
     
     db = Database(db_path)
@@ -611,24 +645,20 @@ casino_recap:
     
     # Retry logic for rate limiting
     max_retries = 5
-    retry_delay = 5  # Start with 5 seconds
     for attempt in range(max_retries):
         try:
-            await bot.start(cfg["token"])
-            break  # Success, exit retry loop
+            await bot.start(token)
+            break
         except discord.HTTPException as e:
-            if e.status == 429:  # Rate limited
+            if e.status == 429:
                 if attempt < max_retries - 1:
-                    wait_time = retry_delay * (2 ** attempt)  # Exponential backoff: 5, 10, 20, 40, 80 seconds
+                    wait_time = 5 * (2 ** attempt)  # Exponential backoff: 5, 10, 20, 40, 80 seconds
                     print(f"Rate limited (429). Waiting {wait_time} seconds before retry ({attempt + 1}/{max_retries})...")
                     await asyncio.sleep(wait_time)
                     continue
-                else:
-                    print(f"ERROR: Rate limited after {max_retries} attempts. Please wait and try again later.")
-                    sys.exit(1)
-            else:
-                # Other HTTP errors - raise immediately
-                raise
+                print(f"ERROR: Rate limited after {max_retries} attempts. Please wait and try again later.")
+                sys.exit(1)
+            raise
         except discord.LoginFailure as e:
             print(f"ERROR: Discord Login Failure: {e}")
             print("Please check your bot token in config.yml or DISCORD_BOT_TOKEN environment variable.")
@@ -638,10 +668,9 @@ casino_recap:
             break
         except Exception as e:
             print(f"Fatal error starting bot: {e}")
-            import traceback
             traceback.print_exc()
             raise
 
+
 if __name__ == "__main__":
     asyncio.run(main())
-

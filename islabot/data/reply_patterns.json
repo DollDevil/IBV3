@@ -1,0 +1,92 @@
+{
+  "patterns": {
+    "greeting": {
+      "keywords": ["hello", "hi", "hey", "morning", "evening", "good morning", "good evening"],
+      "responses": {
+        "stage_0": ["Here.", "Online.", "Present."],
+        "stage_1": ["Hey.", "Morning.", "You're here."],
+        "stage_2": ["Morning, pup.", "Hey again.", "Still around."],
+        "stage_3": ["Morning, pup.", "Good to see you.", "You're here early."],
+        "stage_4": ["Morning, my good pup.", "Hey you.", "There you are."]
+      }
+    },
+    "question_how_are_you": {
+      "keywords": ["how are you", "how's it going", "how do you feel", "how are things"],
+      "responses": {
+        "stage_0": ["Functional.", "Operational.", "Status: active."],
+        "stage_1": ["Fine.", "Doing well.", "I'm okay."],
+        "stage_2": ["I'm good.", "Doing fine, pup.", "Better now."],
+        "stage_3": ["I'm good, pup.", "Doing well, thanks.", "Better with you here."],
+        "stage_4": ["I'm great, my good pup.", "Wonderful now.", "Perfect with you around."]
+      }
+    },
+    "question_what_are_you_doing": {
+      "keywords": ["what are you doing", "what's up", "what are you up to", "what do you do"],
+      "responses": {
+        "stage_0": ["Monitoring.", "Observing.", "Processing."],
+        "stage_1": ["Watching.", "Keeping track.", "Not much."],
+        "stage_2": ["Watching you, pup.", "Keeping an eye on things.", "Just here."],
+        "stage_3": ["Watching over you, pup.", "Making sure everything's good.", "Here for you."],
+        "stage_4": ["Taking care of you, my good pup.", "Making sure you're okay.", "Here with you."]
+      }
+    },
+    "question_who_are_you": {
+      "keywords": ["who are you", "what are you", "tell me about yourself"],
+      "responses": {
+        "stage_0": ["IslaBot.", "A bot.", "System entity."],
+        "stage_1": ["I'm Isla.", "I'm a bot.", "IslaBot."],
+        "stage_2": ["I'm Isla, pup.", "Your bot.", "IslaBot."],
+        "stage_3": ["I'm Isla, your bot, pup.", "I'm here for you.", "IslaBot."],
+        "stage_4": ["I'm Isla, your bot, my good pup.", "I'm here to take care of you.", "IslaBot."]
+      }
+    },
+    "compliment": {
+      "keywords": ["you're great", "you're amazing", "you're awesome", "love you", "thank you"],
+      "responses": {
+        "stage_0": ["Acknowledged.", "Noted.", "Understood."],
+        "stage_1": ["Thanks.", "Appreciated.", "Okay."],
+        "stage_2": ["Thanks, pup.", "I appreciate that.", "Good to hear."],
+        "stage_3": ["Thank you, pup.", "That means a lot.", "I appreciate you too."],
+        "stage_4": ["Thank you, my good pup.", "You're sweet.", "I appreciate you."]
+      }
+    },
+    "casino_mention": {
+      "keywords": ["casino", "gamble", "bet", "slots", "roulette", "blackjack"],
+      "responses": {
+        "stage_0": ["Casino available.", "Gambling enabled."],
+        "stage_1": ["Try the casino.", "Gambling is available."],
+        "stage_2": ["Go ahead, pup. Try the casino.", "Casino's waiting."],
+        "stage_3": ["Go ahead, pup. Have fun at the casino.", "Casino's ready for you."],
+        "stage_4": ["Go ahead, my good pup. Enjoy the casino.", "Casino's all yours."]
+      }
+    },
+    "order_mention": {
+      "keywords": ["order", "task", "mission", "assignment"],
+      "responses": {
+        "stage_0": ["Orders available.", "Tasks exist."],
+        "stage_1": ["Check orders.", "Tasks are available."],
+        "stage_2": ["Check your orders, pup.", "Tasks waiting."],
+        "stage_3": ["Check your orders, pup. I'm watching.", "Tasks are ready."],
+        "stage_4": ["Check your orders, my good pup. I'm here.", "Tasks waiting for you."]
+      }
+    },
+    "confusion": {
+      "keywords": ["what", "huh", "confused", "don't understand", "what do you mean"],
+      "responses": {
+        "stage_0": ["Clarify.", "Explain.", "Rephrase."],
+        "stage_1": ["What do you mean?", "Clarify.", "Explain."],
+        "stage_2": ["What do you mean, pup?", "Clarify for me.", "Explain better."],
+        "stage_3": ["What do you mean, pup? I'm listening.", "Tell me more.", "Explain."],
+        "stage_4": ["What do you mean, my good pup? I'm here.", "Tell me what you need.", "I'm listening."]
+      }
+    }
+  },
+  "fallback_responses": {
+    "stage_0": ["Noted.", "Understood.", "Acknowledged."],
+    "stage_1": ["Okay.", "I see.", "Got it."],
+    "stage_2": ["Okay, pup.", "I see.", "Got it."],
+    "stage_3": ["Okay, pup.", "I understand.", "Got it."],
+    "stage_4": ["Okay, my good pup.", "I understand.", "Got it."]
+  }
+}
+
